@@ -50,6 +50,12 @@ public class PlaybackEngine
     private int _volume = 80;
     private int _latencyMs = 50;
 
+    // Per-sound debounce: ignore PlayCommands that arrive faster than
+    // _debounceMs after the previous accepted Play for the same sound id.
+    // Protects against phone double-taps and laggy network retries.
+    private readonly Dictionary<string, DateTime> _lastPlayedAt = new();
+    private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(80);
+
     public event Action<string>? Playing;
     public event Action? Stopped;
     public event Action<bool>? MonitorChanged;
@@ -152,8 +158,13 @@ public class PlaybackEngine
         mixer.AddMixerInput(_mic.Samples);
         _gameMixer = mixer;
 
+        // Limiter sits AFTER the mixer so mic+sound sums can't exceed [-1, 1]
+        // and overflow the float-to-PCM conversion. Monitor chain is intentionally
+        // unlimited — the user listens to themselves and tolerates raw signal.
+        var limited = new LimiterSampleProvider(mixer);
+
         var player = _factory.Create(_gameDevice, _latencyMs);
-        player.Init(mixer);
+        player.Init(limited);
         player.Play();
         _gameOutput = player;
     }
@@ -174,6 +185,15 @@ public class PlaybackEngine
     {
         if (_monitorOutput is not null) return;
         if (!_monitorEnabled || string.IsNullOrEmpty(_monitorDevice)) return;
+        // Defensive: if the user manually edits config.json to make the
+        // monitor and game devices the same, refuse to start the monitor
+        // pipeline. The API endpoint blocks this in normal flow.
+        if (!string.IsNullOrEmpty(_gameDevice) &&
+            string.Equals(_gameDevice, _monitorDevice, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"audio-engine: monitor device equals game device ({_monitorDevice}); skipping monitor pipeline");
+            return;
+        }
 
         var mixer = new MixingSampleProvider(WorkingFormat) { ReadFully = true };
         _monitorMixer = mixer;
@@ -250,6 +270,16 @@ public class PlaybackEngine
             return;
         }
 
+        // Debounce identical sound ids fired within DebounceWindow — drops
+        // duplicate phone taps without rebuilding the pipeline. Different
+        // sound ids back-to-back are intentionally not debounced.
+        var now = DateTime.UtcNow;
+        if (_lastPlayedAt.TryGetValue(cmd.SoundId, out var last) && now - last < DebounceWindow)
+        {
+            return;
+        }
+        _lastPlayedAt[cmd.SoundId] = now;
+
         EnsureGamePipeline();
         EnsureMicRunning();
         EnsureMonitorPipeline();
@@ -281,7 +311,12 @@ public class PlaybackEngine
 
     private void HandleStop()
     {
-        DetachActiveSounds();
+        // Fade-out instead of yanking the sound out of the mixer — avoids
+        // an audible click. The sound's Finished event (raised once the
+        // fade window completes) reaches HandlePlaybackEnded, which clears
+        // it from the mixer the same way natural EOF does.
+        if (_activeGameSound is not null) _activeGameSound.BeginFadeOut();
+        if (_activeMonitorSound is not null) _activeMonitorSound.BeginFadeOut();
         _nowPlaying = null;
         Stopped?.Invoke();
     }

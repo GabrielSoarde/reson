@@ -141,6 +141,24 @@ engine.SetVolume(library.Config.Volume);
 engine.SetLatency(library.Config.LatencyMs);
 engine.Start();
 
+// Preload positioned sounds into the LRU cache on a background task so the
+// first tap of a button is hitch-free. Best-effort: missing files and decode
+// errors are swallowed silently — the per-Play decode path will surface them.
+if (!isTesting)
+{
+    var cache = app.Services.GetRequiredService<SoundCache>();
+    var soundsDir = Path.Combine(rootDir, "sounds");
+    _ = Task.Run(() =>
+    {
+        foreach (var s in library.Config.Sounds.Where(x => x.Position is not null))
+        {
+            var path = Path.Combine(soundsDir, s.File);
+            if (!File.Exists(path)) continue;
+            try { cache.Get(path); } catch { /* best effort */ }
+        }
+    });
+}
+
 var hub = app.Services.GetRequiredService<Soundpad.Api.StateHub>();
 engine.Playing += id => _ = hub.BroadcastAsync("playing", new { soundId = id });
 engine.Stopped += () => _ = hub.BroadcastAsync("stopped", new { });

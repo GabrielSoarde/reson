@@ -66,6 +66,12 @@ public static class PlaybackEndpoints
         {
             if (body.Device is not null && !loc.EnumerateRenderDeviceNames().Contains(body.Device, StringComparer.OrdinalIgnoreCase))
                 return Results.BadRequest(new { error = "unknown_device", available = loc.EnumerateRenderDeviceNames() });
+            // Block monitor == game device: routing both to the same output
+            // would double the gain and echo the sound (it plays through
+            // the cable AND through the user's own monitor).
+            if (body.Device is not null && lib.Config.AudioDevice is not null &&
+                string.Equals(body.Device, lib.Config.AudioDevice, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = "monitor_equals_game_device" });
             engine.SetMonitorDevice(body.Device);
             lib.MutateConfig(c => c with { MonitorDevice = body.Device });
             lib.Save();

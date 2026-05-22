@@ -84,6 +84,11 @@ public class MicMixingTests
         await Task.Delay(100);
         engine.GameMixerForTests!.MixerInputs.Should().HaveCount(2);
         engine.Stop();
+        // Stop initiates a fade-out instead of yanking the input. Drive reads
+        // through the mixer so the fade window elapses; the sound then raises
+        // Finished and the engine detaches it on the next command-loop turn.
+        var buf = new float[48000 * 2 / 10]; // 100 ms of 48k stereo
+        engine.GameMixerForTests!.Read(buf, 0, buf.Length);
         await Task.Delay(100);
         engine.GameMixerForTests!.MixerInputs.Should().HaveCount(1); // mic remains
         engine.NowPlaying.Should().BeNull();
@@ -163,6 +168,10 @@ public class MicMixingTests
         // Read directly from the engine's game mixer. With the active sound
         // at full volume (default 80%) plus the mic contribution, samples
         // should be 0.25 + 0.5 * 0.8 = 0.65.
+        // Skip past the sound's 10ms fade-in (= 480 frames × 2 channels = 960
+        // samples at 48kHz stereo) so we measure steady-state.
+        var skip = new float[1024];
+        engine.GameMixerForTests!.Read(skip, 0, skip.Length);
         var buf = new float[256];
         var n = engine.GameMixerForTests!.Read(buf, 0, buf.Length);
         n.Should().Be(buf.Length);
