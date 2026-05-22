@@ -4,5 +4,9 @@ namespace Soundpad.Audio;
 
 public interface IWavePlayerFactory
 {
-    IWavePlayer Create(string deviceFriendlyName, int latencyMs);
+    /// <summary>
+    /// Create a WasapiOut bound to the device with the given <b>endpoint id</b>
+    /// (stable WASAPI identifier, NOT the FriendlyName).
+    /// </summary>
+    IWavePlayer Create(string deviceId, int latencyMs);
 }

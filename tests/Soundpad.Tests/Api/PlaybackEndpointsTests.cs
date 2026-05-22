@@ -61,13 +61,16 @@ public class PlaybackEndpointsTests : IClassFixture<TestingWebApplicationFactory
         var c = AuthedClient();
         var lib = _factory.Services.GetRequiredService<SoundLibrary>();
         var loc = _factory.Services.GetRequiredService<Soundpad.Audio.DeviceLocator>();
-        var devices = loc.EnumerateRenderDeviceNames();
+        var devices = loc.EnumerateRenderDevices();
         if (devices.Count == 0) return; // headless CI: no playback devices to test against
-        // Pin the game device to the first real device on the system.
+        // Pin the game device to the first real device on the system. Under v2
+        // config stores the stable endpoint ID — the endpoint resolves the
+        // POST body (id or FriendlyName) to an ID before comparison.
         var dev = devices[0];
-        lib.MutateConfig(cfg => cfg with { AudioDevice = dev });
-        // Same device for monitor → 400 monitor_equals_game_device.
-        var r = await c.PostAsJsonAsync("/api/monitor/device", new { device = dev });
+        lib.MutateConfig(cfg => cfg with { AudioDevice = dev.Id });
+        // Same device for monitor → 400 monitor_equals_game_device. Body can
+        // be the FriendlyName (legacy clients) and still match by ID.
+        var r = await c.PostAsJsonAsync("/api/monitor/device", new { device = dev.FriendlyName });
         r.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         var body = await r.Content.ReadAsStringAsync();
         body.Should().Contain("monitor_equals_game_device");

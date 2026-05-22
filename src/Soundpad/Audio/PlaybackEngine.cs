@@ -105,6 +105,29 @@ public class PlaybackEngine
     public void SetMicDevice(string? d) => Post(new SetMicDeviceCommand(d));
     public void SetLatency(int ms) { _latencyMs = ms; }
 
+    /// <summary>
+    /// Notify the engine that a device id is no longer available. Safe to
+    /// call from any thread (typically a COM thread firing from
+    /// <see cref="IDeviceChangeNotifier"/>) — it just enqueues a command.
+    /// No-op once the engine is shut down.
+    /// </summary>
+    public void NotifyDeviceUnplugged(string deviceId)
+    {
+        if (_queue.IsAddingCompleted) return;
+        try { _queue.Add(new DeviceUnpluggedCommand(deviceId)); } catch (InvalidOperationException) { /* race vs Shutdown */ }
+    }
+
+    /// <summary>
+    /// Notify the engine that a device id became available. Safe to call from
+    /// any thread (including COM threads). The engine rebuilds any pipeline
+    /// configured for this device on its own STA thread.
+    /// </summary>
+    public void NotifyDevicePlugged(string deviceId)
+    {
+        if (_queue.IsAddingCompleted) return;
+        try { _queue.Add(new DevicePluggedCommand(deviceId)); } catch (InvalidOperationException) { /* race vs Shutdown */ }
+    }
+
     private void Post(AudioCommand c)
     {
         if (_queue.IsAddingCompleted) throw new InvalidOperationException("Engine shut down");
@@ -139,6 +162,8 @@ public class PlaybackEngine
             case SetGameDeviceCommand gd: HandleSetGameDevice(gd.Device); break;
             case SetMicDeviceCommand sm: HandleSetMicDevice(sm.Device); break;
             case PlaybackEndedCommand pe: HandlePlaybackEnded(pe); break;
+            case DeviceUnpluggedCommand du: HandleDeviceUnplugged(du.DeviceId); break;
+            case DevicePluggedCommand dp: HandleDevicePlugged(dp.DeviceId); break;
             case ShutdownCommand: /* handled by Loop */ break;
         }
     }
@@ -260,6 +285,66 @@ public class PlaybackEngine
             try { _mic.Stop(); } catch { }
         }
         EnsureMicRunning();
+    }
+
+    // ─── hot-plug handlers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// React to a device that just left the system. If it was our game,
+    /// monitor, or mic device, gracefully tear the affected pipeline down
+    /// so we don't keep pumping into a stale WASAPI endpoint. We deliberately
+    /// keep _gameDevice / _monitorDevice / _micDevice populated — when the
+    /// same id re-appears, <see cref="HandleDevicePlugged"/> rebuilds.
+    /// </summary>
+    private void HandleDeviceUnplugged(string deviceId)
+    {
+        if (string.IsNullOrEmpty(deviceId)) return;
+
+        if (_gameDevice is not null && string.Equals(_gameDevice, deviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"audio-engine: game device {deviceId} unplugged; pausing pipeline");
+            TearDownGamePipeline();
+        }
+        if (_monitorDevice is not null && string.Equals(_monitorDevice, deviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"audio-engine: monitor device {deviceId} unplugged; pausing pipeline");
+            TearDownMonitorPipeline();
+        }
+        if (_micDevice is not null && string.Equals(_micDevice, deviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine($"audio-engine: mic device {deviceId} unplugged; stopping capture");
+            try { _mic.Stop(); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// React to a device that just appeared (or returned). Rebuild whichever
+    /// of our pipelines was configured for that id but currently torn down.
+    /// EnsureGamePipeline / EnsureMonitorPipeline / EnsureMicRunning are all
+    /// idempotent so this is safe even if the pipeline was never destroyed.
+    /// </summary>
+    private void HandleDevicePlugged(string deviceId)
+    {
+        if (string.IsNullOrEmpty(deviceId)) return;
+
+        if (_gameDevice is not null &&
+            string.Equals(_gameDevice, deviceId, StringComparison.OrdinalIgnoreCase) &&
+            _gameOutput is null)
+        {
+            EnsureGamePipeline();
+        }
+        if (_monitorDevice is not null &&
+            string.Equals(_monitorDevice, deviceId, StringComparison.OrdinalIgnoreCase) &&
+            _monitorOutput is null && _monitorEnabled)
+        {
+            EnsureMonitorPipeline();
+        }
+        if (_micDevice is not null &&
+            string.Equals(_micDevice, deviceId, StringComparison.OrdinalIgnoreCase) &&
+            !_mic.IsRunning)
+        {
+            EnsureMicRunning();
+        }
     }
 
     private void HandlePlay(PlayCommand cmd)

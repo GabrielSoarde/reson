@@ -33,12 +33,12 @@ public interface IMicCapture : IDisposable
     bool IsRunning { get; }
 
     /// <summary>
-    /// Begin capturing from the named device. If <paramref name="deviceFriendlyName"/>
-    /// is null, uses the default capture device. The output is resampled to
-    /// <paramref name="workingFormat"/>. Safe to call multiple times — stops
-    /// the previous capture first.
+    /// Begin capturing from the device with the given <b>endpoint id</b>. If
+    /// <paramref name="deviceId"/> is null, uses the default capture device.
+    /// The output is resampled to <paramref name="workingFormat"/>. Safe to
+    /// call multiple times — stops the previous capture first.
     /// </summary>
-    void Start(string? deviceFriendlyName, WaveFormat workingFormat);
+    void Start(string? deviceId, WaveFormat workingFormat);
 
     /// <summary>
     /// Stop capture. The <see cref="Samples"/> provider stays valid and emits

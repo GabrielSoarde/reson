@@ -4,7 +4,11 @@ namespace Soundpad.Models;
 
 public record SoundConfig
 {
-    public int SchemaVersion { get; init; } = 1;
+    // v1 → v2 (2026-05): AudioDevice / MonitorDevice / MicDevice now hold
+    // stable WASAPI endpoint ids ({0.0.0.x}.{guid}) instead of FriendlyNames.
+    // SoundLibrary.Load migrates v1 configs in place (resolves names to ids
+    // via DeviceLocator on first launch after upgrade).
+    public int SchemaVersion { get; init; } = 2;
     public string AuthToken { get; init; } = "";
     public int Port { get; init; } = 8080;
     public string? PreferredNetworkAdapter { get; init; }

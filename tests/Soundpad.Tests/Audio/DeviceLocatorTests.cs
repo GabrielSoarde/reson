@@ -25,25 +25,27 @@ public class DeviceLocatorTests
         return m.Object;
     }
 
+    // FindVoiceMeeter* / FindVbCable* now return the device id, not the
+    // FriendlyName — that's what config.json stores under the v2 schema.
     [Fact]
-    public void FindVoiceMeeter_Detects_Standard_Input()
+    public void FindVoiceMeeter_Returns_Id_Of_Standard_Input()
     {
         var loc = new DeviceLocator(MakeEnum("Speakers", "VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)"));
-        loc.FindVoiceMeeterInput().Should().Contain("VoiceMeeter Input");
+        loc.FindVoiceMeeterInput().Should().Be("id1");
     }
 
     [Fact]
-    public void FindVoiceMeeter_Detects_VAIO3_Variant()
+    public void FindVoiceMeeter_Returns_Id_Of_VAIO3_Variant()
     {
         var loc = new DeviceLocator(MakeEnum("VoiceMeeter VAIO3 Input"));
-        loc.FindVoiceMeeterInput().Should().Contain("VAIO3");
+        loc.FindVoiceMeeterInput().Should().Be("id0");
     }
 
     [Fact]
-    public void FindVoiceMeeter_Detects_Aux_Variant()
+    public void FindVoiceMeeter_Returns_Id_Of_Aux_Variant()
     {
         var loc = new DeviceLocator(MakeEnum("VoiceMeeter Aux Input"));
-        loc.FindVoiceMeeterInput().Should().Contain("Aux");
+        loc.FindVoiceMeeterInput().Should().Be("id0");
     }
 
     [Fact]
@@ -61,10 +63,10 @@ public class DeviceLocatorTests
     }
 
     [Fact]
-    public void FindVbCable_Detects_Standard_Input()
+    public void FindVbCable_Returns_Id_Of_Standard_Input()
     {
         var loc = new DeviceLocator(MakeEnum("Speakers", "CABLE Input (VB-Audio Virtual Cable)"));
-        loc.FindVbCableInput().Should().Contain("CABLE Input");
+        loc.FindVbCableInput().Should().Be("id1");
     }
 
     [Fact]
@@ -75,20 +77,21 @@ public class DeviceLocatorTests
     }
 
     [Fact]
-    public void FindVirtualBridge_Prefers_VoiceMeeter_Over_VbCable_When_Both_Present()
+    public void FindVirtualBridge_Prefers_VoiceMeeter_Id_Over_VbCable_Id()
     {
         var loc = new DeviceLocator(MakeEnum(
             "Speakers",
             "CABLE Input (VB-Audio Virtual Cable)",
             "VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)"));
-        loc.FindVirtualAudioBridge().Should().Contain("VoiceMeeter");
+        // Voicemeeter is at index 2 → id2
+        loc.FindVirtualAudioBridge().Should().Be("id2");
     }
 
     [Fact]
-    public void FindVirtualBridge_Falls_Back_To_VbCable()
+    public void FindVirtualBridge_Falls_Back_To_VbCable_Id()
     {
         var loc = new DeviceLocator(MakeEnum("Speakers", "CABLE Input (VB-Audio Virtual Cable)"));
-        loc.FindVirtualAudioBridge().Should().Contain("CABLE Input");
+        loc.FindVirtualAudioBridge().Should().Be("id1");
     }
 
     [Fact]

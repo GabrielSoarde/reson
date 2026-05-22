@@ -24,7 +24,12 @@ public static class PlaybackEndpoints
                 lib.Config.Volume, lib.Config.Grid, entries,
                 engine.NowPlaying, AuthRequired: true,
                 MicDevice: lib.Config.MicDevice,
-                AvailableInputDevices: SafeListInputs(loc));
+                AvailableInputDevices: SafeListInputs(loc),
+                // FriendlyName projections — resolved on each /state call so
+                // unplug/replug is reflected without an explicit refresh hook.
+                AudioDeviceName: loc.ResolveCurrentName(lib.Config.AudioDevice),
+                MonitorDeviceName: loc.ResolveCurrentName(lib.Config.MonitorDevice),
+                MicDeviceName: loc.ResolveCurrentName(lib.Config.MicDevice));
         });
 
         g.MapPost("/play/{soundId}", (string soundId, SoundLibrary lib, PlaybackEngine engine, AppOptions opts) =>
@@ -64,38 +69,69 @@ public static class PlaybackEndpoints
 
         g.MapPost("/monitor/device", async (MonitorDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
         {
-            if (body.Device is not null && !loc.EnumerateRenderDeviceNames().Contains(body.Device, StringComparer.OrdinalIgnoreCase))
+            // Body carries an endpoint id, but we also accept a FriendlyName
+            // for back-compat with old clients/scripts that still POST names.
+            // ResolveDeviceInput returns null if the input matches nothing.
+            string? deviceId = ResolveDeviceInput(body.Device, loc, DataFlow.Render);
+            if (body.Device is not null && deviceId is null)
                 return Results.BadRequest(new { error = "unknown_device", available = loc.EnumerateRenderDeviceNames() });
             // Block monitor == game device: routing both to the same output
-            // would double the gain and echo the sound (it plays through
-            // the cable AND through the user's own monitor).
-            if (body.Device is not null && lib.Config.AudioDevice is not null &&
-                string.Equals(body.Device, lib.Config.AudioDevice, StringComparison.OrdinalIgnoreCase))
+            // would double the gain and echo the sound. Compare by id.
+            if (deviceId is not null && lib.Config.AudioDevice is not null &&
+                string.Equals(deviceId, lib.Config.AudioDevice, StringComparison.OrdinalIgnoreCase))
                 return Results.BadRequest(new { error = "monitor_equals_game_device" });
-            engine.SetMonitorDevice(body.Device);
-            lib.MutateConfig(c => c with { MonitorDevice = body.Device });
+            engine.SetMonitorDevice(deviceId);
+            lib.MutateConfig(c => c with { MonitorDevice = deviceId });
             lib.Save();
-            await hub.BroadcastAsync("monitorDeviceChanged", new { device = body.Device }, OriginIdOf(http));
+            await hub.BroadcastAsync("monitorDeviceChanged", new { device = deviceId }, OriginIdOf(http));
             return Results.NoContent();
         });
 
         g.MapPost("/mic/device", async (MicDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
         {
             // null = revert to system default capture device — always valid.
+            string? deviceId = null;
             if (body.Device is not null)
             {
-                IReadOnlyList<string> available;
-                try { available = loc.EnumerateCaptureDeviceNames(); }
-                catch { available = Array.Empty<string>(); }
-                if (!available.Contains(body.Device, StringComparer.OrdinalIgnoreCase))
+                deviceId = ResolveDeviceInput(body.Device, loc, DataFlow.Capture);
+                if (deviceId is null)
+                {
+                    IReadOnlyList<string> available;
+                    try { available = loc.EnumerateCaptureDeviceNames(); }
+                    catch { available = Array.Empty<string>(); }
                     return Results.BadRequest(new { error = "unknown_device", available });
+                }
             }
-            engine.SetMicDevice(body.Device);
-            lib.MutateConfig(c => c with { MicDevice = body.Device });
+            engine.SetMicDevice(deviceId);
+            lib.MutateConfig(c => c with { MicDevice = deviceId });
             lib.Save();
-            await hub.BroadcastAsync("micDeviceChanged", new { device = body.Device }, OriginIdOf(http));
+            await hub.BroadcastAsync("micDeviceChanged", new { device = deviceId }, OriginIdOf(http));
             return Results.NoContent();
         });
+    }
+
+    /// <summary>
+    /// Accept either an endpoint id (preferred) or a FriendlyName (legacy)
+    /// and return the canonical id, or null if unknown. The flow argument
+    /// restricts which side of the enumeration is checked first.
+    /// </summary>
+    private static string? ResolveDeviceInput(string? input, DeviceLocator loc, DataFlow flow)
+    {
+        if (string.IsNullOrEmpty(input)) return null;
+
+        // Already an id?
+        if (loc.DeviceExists(input)) return input;
+
+        // Try as FriendlyName — search the matching flow first, then fall
+        // back to FindIdByName (which checks both flows).
+        var devices = flow == DataFlow.Render
+            ? loc.EnumerateRenderDevices()
+            : loc.EnumerateCaptureDevices();
+        foreach (var d in devices)
+            if (string.Equals(d.FriendlyName, input, StringComparison.OrdinalIgnoreCase))
+                return d.Id;
+
+        return loc.FindIdByName(input);
     }
 
     private static IReadOnlyList<string> SafeListInputs(DeviceLocator loc)
@@ -109,6 +145,9 @@ public static class PlaybackEndpoints
         var v = ctx.Request.Headers["X-Origin-Id"].FirstOrDefault();
         return string.IsNullOrWhiteSpace(v) ? null : v;
     }
+
+    /// <summary>Flow discriminator used by ResolveDeviceInput.</summary>
+    private enum DataFlow { Render, Capture }
 
     public record VolumeBody(int Value);
     public record MonitorBody(bool Enabled);

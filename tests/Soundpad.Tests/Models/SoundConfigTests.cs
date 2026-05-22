@@ -6,10 +6,13 @@ namespace Soundpad.Tests.Models;
 public class SoundConfigTests
 {
     [Fact]
-    public void Default_Has_SchemaVersion_1()
+    public void Default_Has_Current_SchemaVersion()
     {
+        // Default is born under the current schema (v2: device fields hold
+        // WASAPI endpoint ids instead of FriendlyNames). The v1 → v2 path is
+        // covered separately by SoundLibraryMigrationTests.
         var c = SoundConfig.Default();
-        c.SchemaVersion.Should().Be(1);
+        c.SchemaVersion.Should().Be(2);
         c.MonitorDevice.Should().BeNull();
         c.MonitorEnabled.Should().BeFalse();
         c.Volume.Should().Be(80);

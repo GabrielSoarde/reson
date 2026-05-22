@@ -54,6 +54,25 @@ var libOpts = new SoundLibraryOptions(rootDir);
 
 var library = new SoundLibrary(libOpts);
 library.Load();
+// v1 → v2 device-identifier migration runs before any code consults
+// library.Config.AudioDevice/MonitorDevice/MicDevice. The locator depends on
+// IAudioDeviceEnumerator — instantiate one explicitly here (DI isn't built
+// yet). Under Testing we use the same WASAPI enumerator; the migration is a
+// silent no-op when device fields are already null or already-ids.
+if (!isTesting)
+{
+    try
+    {
+        var bootLocator = new DeviceLocator(new WasapiAudioDeviceEnumerator());
+        library.MigrateDeviceIdentifiers(bootLocator);
+    }
+    catch (Exception ex)
+    {
+        // Headless or driver-less environment: migration becomes a no-op and
+        // the user re-picks devices from the UI.
+        Console.Error.WriteLine($"Device identifier migration skipped: {ex.Message}");
+    }
+}
 library.RepairInvariants();
 library.AutoScan();
 
@@ -114,6 +133,12 @@ builder.Services.AddSingleton<ISoundDecoder, NAudioSoundDecoder>();
 builder.Services.AddSingleton(sp => new SoundCache(sp.GetRequiredService<ISoundDecoder>(), 50));
 builder.Services.AddSingleton<PlaybackEngine>();
 builder.Services.AddSingleton<Soundpad.Api.StateHub>();
+// Hot-plug listener is WASAPI-bound — skipped under Testing so the
+// WebApplicationFactory doesn't pull in real COM registrations.
+if (!isTesting)
+{
+    builder.Services.AddSingleton<IDeviceChangeNotifier, DeviceChangeNotifier>();
+}
 
 var app = builder.Build();
 
@@ -140,6 +165,44 @@ engine.SetMicDevice(library.Config.MicDevice);
 engine.SetVolume(library.Config.Volume);
 engine.SetLatency(library.Config.LatencyMs);
 engine.Start();
+
+// Hot-plug bridge: wire IMMNotificationClient → engine command queue. The
+// notifier's events fire on COM threads — engine.NotifyDevice{Un,}plugged
+// only enqueues a command, so it's safe to call from any thread. Disposed
+// via the same ApplicationStopping hook as the engine.
+IDeviceChangeNotifier? deviceNotifier = null;
+if (!isTesting)
+{
+    try
+    {
+        deviceNotifier = app.Services.GetRequiredService<IDeviceChangeNotifier>();
+        deviceNotifier.DeviceUnplugged += id => engine.NotifyDeviceUnplugged(id);
+        deviceNotifier.DevicePlugged += id => engine.NotifyDevicePlugged(id);
+        deviceNotifier.Start();
+    }
+    catch (Exception ex)
+    {
+        // Notifier failures are non-fatal — the user just won't get hot-plug
+        // recovery for this session.
+        Console.Error.WriteLine($"Device change notifier failed to start: {ex.Message}");
+    }
+}
+
+// FileSystemWatcher on the sounds/ folder — picks up files dropped after
+// boot (or removed externally) and refreshes the library without a restart.
+SoundsFolderWatcher? soundsWatcher = null;
+if (!isTesting)
+{
+    try
+    {
+        soundsWatcher = new SoundsFolderWatcher(library, Path.Combine(rootDir, "sounds"));
+        soundsWatcher.Start();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Sounds folder watcher failed to start: {ex.Message}");
+    }
+}
 
 // Preload positioned sounds into the LRU cache on a background task so the
 // first tap of a button is hitch-free. Best-effort: missing files and decode
@@ -198,6 +261,8 @@ if (!isTesting && adapter is not null)
 
 app.Lifetime.ApplicationStopping.Register(() =>
 {
+    try { soundsWatcher?.Dispose(); } catch { /* best effort */ }
+    try { deviceNotifier?.Dispose(); } catch { /* best effort */ }
     try { wpf?.Stop(); } catch { /* best effort */ }
     engine.Shutdown();
 });

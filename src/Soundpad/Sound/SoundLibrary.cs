@@ -1,12 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Soundpad.Audio;
 using Soundpad.Models;
 
 namespace Soundpad.Sound;
 
 public class SoundLibrary
 {
-    private const int CurrentSchemaVersion = 1;
+    // Bumped to 2: device fields hold endpoint ids instead of FriendlyNames.
+    // See MigrateDeviceIdentifiers below for the v1 → v2 transformation.
+    private const int CurrentSchemaVersion = 2;
     private readonly SoundLibraryOptions _opts;
     private readonly object _lock = new();
     private SoundConfig _config = SoundConfig.Default();
@@ -48,6 +51,60 @@ public class SoundLibrary
                     $"config.json schemaVersion {loaded.SchemaVersion} is newer than supported {CurrentSchemaVersion}");
             _config = loaded;
         }
+    }
+
+    /// <summary>
+    /// One-shot migration of v1 configs (device fields = FriendlyName) to v2
+    /// (device fields = WASAPI endpoint id). For each populated device field
+    /// we try to resolve the legacy FriendlyName to a current device id; if
+    /// the device is still present, we keep it under its stable id. If the
+    /// device is gone (renamed/unplugged at the time of upgrade) the field
+    /// is set to null and the user re-picks it from the UI.
+    ///
+    /// Idempotent: schemaVersion is bumped to 2 and a no-op on next launch.
+    /// Silent: only the schema bump (and any id translation) is written; no
+    /// user-facing message. Safe to call after <see cref="Load"/>.
+    /// </summary>
+    public void MigrateDeviceIdentifiers(DeviceLocator locator)
+    {
+        bool changed = false;
+        lock (_lock)
+        {
+            if (_config.SchemaVersion >= 2) return;
+
+            string? Translate(string? legacyName)
+            {
+                if (string.IsNullOrEmpty(legacyName)) return null;
+                // If the persisted value is already an endpoint id (rare for
+                // a v1 config, but defensive against partially-migrated
+                // states), keep it.
+                if (locator.DeviceExists(legacyName)) return legacyName;
+                return locator.FindIdByName(legacyName);
+            }
+
+            var migrated = _config with
+            {
+                SchemaVersion = 2,
+                AudioDevice = Translate(_config.AudioDevice),
+                MonitorDevice = Translate(_config.MonitorDevice),
+                MicDevice = Translate(_config.MicDevice),
+            };
+
+            if (!migrated.Equals(_config))
+            {
+                _config = migrated;
+                changed = true;
+            }
+            else
+            {
+                // Schema-only bump (all device fields were null) — still persist
+                // so we don't re-run the migration on every launch.
+                _config = migrated;
+                changed = true;
+            }
+            SaveLocked();
+        }
+        if (changed) Changed?.Invoke();
     }
 
     public void MutateConfig(Func<SoundConfig, SoundConfig> mutate)
@@ -202,6 +259,14 @@ public class SoundLibrary
         }
         if (changed) Changed?.Invoke();
     }
+
+    /// <summary>
+    /// Raise <see cref="Changed"/> without mutating config — used by
+    /// <see cref="SoundsFolderWatcher"/> when an external delete happens
+    /// (the entry stays in config but its runtime status flips to missing,
+    /// and the UI must rebuild to reflect that).
+    /// </summary>
+    public void NotifyExternalChange() => Changed?.Invoke();
 
     public IReadOnlyList<SoundRuntimeStatus> GetRuntimeStatuses()
     {

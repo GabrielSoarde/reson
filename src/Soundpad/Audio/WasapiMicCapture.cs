@@ -31,7 +31,7 @@ public class WasapiMicCapture : IMicCapture
 
     public event Action<Exception>? CaptureError;
 
-    public void Start(string? deviceFriendlyName, WaveFormat workingFormat)
+    public void Start(string? deviceId, WaveFormat workingFormat)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(WasapiMicCapture));
 
@@ -45,15 +45,16 @@ public class WasapiMicCapture : IMicCapture
             MMDevice device;
             using (var en = new MMDeviceEnumerator())
             {
-                if (string.IsNullOrEmpty(deviceFriendlyName))
+                if (string.IsNullOrEmpty(deviceId))
                 {
                     device = en.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
                 }
                 else
                 {
+                    // Look up by WASAPI endpoint id (stable across renames/replugs).
                     device = en.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
-                        .FirstOrDefault(d => string.Equals(d.FriendlyName, deviceFriendlyName, StringComparison.OrdinalIgnoreCase))
-                        ?? throw new InvalidOperationException($"Mic device not found: {deviceFriendlyName}");
+                        .FirstOrDefault(d => string.Equals(d.ID, deviceId, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException($"Mic device not found by id: {deviceId}");
                 }
             }
 
