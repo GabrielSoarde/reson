@@ -3,7 +3,17 @@
   const token = params.get('t');
   if (token) localStorage.setItem('soundpad.token', token);
   const tok = localStorage.getItem('soundpad.token') || '';
-  const originId = crypto.randomUUID();
+  // crypto.randomUUID() is only available in secure contexts (https/localhost).
+  // Over plain http on a LAN IP we fall back to crypto.getRandomValues (always available).
+  const originId = (crypto.randomUUID
+    ? crypto.randomUUID()
+    : (() => {
+        const b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+        const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+      })());
 
   const headers = () => ({ 'X-Auth-Token': tok, 'X-Origin-Id': originId, 'Content-Type': 'application/json' });
 
