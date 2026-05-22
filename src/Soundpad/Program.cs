@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using Soundpad;
 using Soundpad.Audio;
+using Soundpad.Logging;
 using Soundpad.Network;
 using Soundpad.Sound;
 using Soundpad.Tray;
@@ -14,6 +15,16 @@ var isTesting = string.Equals(
 
 var rootDir = AppContext.BaseDirectory;
 Directory.CreateDirectory(Path.Combine(rootDir, "sounds"));
+
+// Ensure %LOCALAPPDATA%\Soundpad\logs\ exists for the rolling file logger (skipped under Testing).
+string? logDir = null;
+if (!isTesting)
+{
+    logDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Soundpad", "logs");
+    Directory.CreateDirectory(logDir);
+}
 var libOpts = new SoundLibraryOptions(rootDir);
 
 var library = new SoundLibrary(libOpts);
@@ -42,6 +53,15 @@ if (!isTesting)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure logging: console always; rolling file provider skipped in Testing env
+// to avoid creating log files during integration tests / CI.
+if (!isTesting)
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+    builder.Logging.AddProvider(new RollingFileLoggerProvider(logDir!, 10 * 1024 * 1024, 7));
+}
 
 if (!isTesting)
 {
