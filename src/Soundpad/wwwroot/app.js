@@ -39,7 +39,10 @@
         const cell = document.createElement('div');
         cell.className = 'cell' + (s ? '' : ' empty') + (s && s.id === nowPlaying ? ' playing' : '') + (s && s.missing ? ' missing' : '');
         cell.textContent = s ? s.label : '+';
-        if (s) cell.addEventListener('click', () => api(`/api/play/${s.id}`, { method: 'POST' }));
+        if (s) {
+          cell.style.backgroundColor = s.color || '#3b82f6';
+          cell.addEventListener('click', () => api(`/api/play/${s.id}`, { method: 'POST' }));
+        }
         grid.appendChild(cell);
       }
     }
