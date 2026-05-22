@@ -36,6 +36,8 @@ public sealed class MainWindow : Window
 {
     private readonly SoundLibrary _library;
     private readonly PlaybackEngine _engine;
+    private readonly DeviceLocator _locator;
+    private readonly int _port;
     private readonly Action<string> _onPlaying;
     private readonly Action _onStopped;
     private readonly Action<int> _onVolumeChanged;
@@ -57,10 +59,12 @@ public sealed class MainWindow : Window
     private readonly Dictionary<string, SoundTile> _tilesById = new();
     private bool _suppressEngineEcho;  // ignore the next VolumeChanged when we caused it
 
-    public MainWindow(SoundLibrary library, PlaybackEngine engine)
+    public MainWindow(SoundLibrary library, PlaybackEngine engine, DeviceLocator locator, int port)
     {
         _library = library;
         _engine = engine;
+        _locator = locator;
+        _port = port;
 
         Title = "Soundpad";
         Width = 900;
@@ -88,6 +92,13 @@ public sealed class MainWindow : Window
         _engine.MonitorChanged += _onMonitorChanged;
         _library.Changed += _onLibraryChanged;
 
+        // Lifecycle hooks live here (not inside the first-run warning) so they
+        // attach regardless of whether the user has a device configured. A
+        // prior bug wired these inside WarnIfNoAudioDevice, which meant once
+        // the user picked a device the X button stopped hide-to-tray.
+        Closing += OnClosingHideToTray;
+        Closed += OnClosedUnsubscribe;
+
         Loaded += (_, _) => WarnIfNoAudioDevice();
     }
 
@@ -100,6 +111,29 @@ public sealed class MainWindow : Window
     private void WarnIfNoAudioDevice()
     {
         if (!string.IsNullOrEmpty(_library.Config.AudioDevice)) return;
+
+        // Branch on whether the system has *any* render devices. If yes, the
+        // user just hasn't picked one yet — offer the Settings dialog. If no,
+        // there's nothing to pick from and the right action is to install a
+        // virtual cable, so we fall through to the VB-Cable prompt.
+        IReadOnlyList<AudioDeviceInfo> outs;
+        try { outs = _locator.EnumerateRenderDevices(); } catch { outs = Array.Empty<AudioDeviceInfo>(); }
+
+        if (outs.Count > 0)
+        {
+            var pickNow = System.Windows.MessageBox.Show(
+                "Nenhum dispositivo de saída está configurado, mas há dispositivos disponíveis no sistema.\n\n" +
+                "Deseja abrir as configurações agora para escolher um?",
+                "Soundpad — escolha um dispositivo",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (pickNow == System.Windows.MessageBoxResult.Yes)
+            {
+                OpenSettingsDialog();
+            }
+            return;
+        }
+
         var result = System.Windows.MessageBox.Show(
             "Nenhum cabo de áudio virtual foi detectado.\n\n" +
             "O Soundpad precisa de VB-Cable ou VoiceMeeter instalado para enviar som ao Discord/Valorant.\n\n" +
@@ -119,9 +153,6 @@ public sealed class MainWindow : Window
             }
             catch { /* user can navigate manually */ }
         }
-
-        Closing += OnClosingHideToTray;
-        Closed += OnClosedUnsubscribe;
     }
 
     private void BuildLayout()
@@ -183,9 +214,10 @@ public sealed class MainWindow : Window
             Padding = new Thickness(20, 16, 20, 18),
         };
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // STOP
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Volume
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // Monitor
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // Settings
 
         // STOP button (left)
         var stopButton = BuildStopButton();
@@ -253,8 +285,55 @@ public sealed class MainWindow : Window
         Grid.SetColumn(_monitorCheck, 2);
         grid.Children.Add(_monitorCheck);
 
+        // Settings button (gear) — opens the device picker modal.
+        var settingsBtn = BuildSettingsButton();
+        Grid.SetColumn(settingsBtn, 3);
+        grid.Children.Add(settingsBtn);
+
         bar.Child = grid;
         return bar;
+    }
+
+    private Button BuildSettingsButton()
+    {
+        // Plain "Configurações" text button — gear glyph (⚙) renders unevenly
+        // across Segoe UI variants, so use text to stay readable on every box.
+        var rest = (Color)ColorConverter.ConvertFromString("#374151");
+        var hover = (Color)ColorConverter.ConvertFromString("#4b5563");
+        var btn = new Button
+        {
+            Content = "⚙ Configurações",
+            Foreground = Brushes.White,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 13,
+            Width = 150,
+            Height = 36,
+            Cursor = Cursors.Hand,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(rest),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 0, 0),
+        };
+        btn.Template = BuildFlatButtonTemplate(rest, hover);
+        btn.Click += (_, _) => OpenSettingsDialog();
+        return btn;
+    }
+
+    private void OpenSettingsDialog()
+    {
+        try
+        {
+            var dlg = new SettingsWindow(_library, _locator, _port) { Owner = this };
+            dlg.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"Não foi possível abrir as configurações:\n{ex.Message}",
+                "Soundpad",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
     }
 
     private Button BuildStopButton()

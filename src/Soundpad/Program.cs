@@ -255,7 +255,8 @@ Soundpad.Api.SoundEndpoints.Map(app);
 WpfHost? wpf = null;
 if (!isTesting && adapter is not null)
 {
-    wpf = new WpfHost(library, engine, adapter, boundPort);
+    var locator = app.Services.GetRequiredService<DeviceLocator>();
+    wpf = new WpfHost(library, engine, locator, adapter, boundPort);
     wpf.Start();
 }
 

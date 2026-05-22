@@ -87,6 +87,28 @@ public static class PlaybackEndpoints
             return Results.NoContent();
         });
 
+        // Game-output device picker. Mirror of /monitor/device: accepts either
+        // endpoint id or FriendlyName, persists the canonical id, enforces the
+        // monitor != game loop guard, broadcasts gameDeviceChanged with the
+        // caller's X-Origin-Id so the WPF window can echo-filter its own request.
+        g.MapPost("/game/device", async (GameDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
+        {
+            string? deviceId = ResolveDeviceInput(body.Device, loc, DataFlow.Render);
+            if (body.Device is not null && deviceId is null)
+                return Results.BadRequest(new { error = "unknown_device", available = loc.EnumerateRenderDeviceNames() });
+            // Mirror of the monitor guard: a game device equal to the monitor
+            // device would double-mix the sound. Different error code so the
+            // UI can distinguish which direction the user picked from.
+            if (deviceId is not null && lib.Config.MonitorDevice is not null &&
+                string.Equals(deviceId, lib.Config.MonitorDevice, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = "game_equals_monitor_device" });
+            engine.SetGameDevice(deviceId);
+            lib.MutateConfig(c => c with { AudioDevice = deviceId });
+            lib.Save();
+            await hub.BroadcastAsync("gameDeviceChanged", new { device = deviceId }, OriginIdOf(http));
+            return Results.NoContent();
+        });
+
         g.MapPost("/mic/device", async (MicDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
         {
             // null = revert to system default capture device — always valid.
@@ -153,4 +175,5 @@ public static class PlaybackEndpoints
     public record MonitorBody(bool Enabled);
     public record MonitorDeviceBody(string? Device);
     public record MicDeviceBody(string? Device);
+    public record GameDeviceBody(string? Device);
 }

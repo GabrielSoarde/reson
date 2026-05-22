@@ -18,6 +18,7 @@ public sealed class WpfHost
 {
     private readonly SoundLibrary _library;
     private readonly PlaybackEngine _engine;
+    private readonly DeviceLocator _locator;
     private readonly NetworkAdapter _adapter;
     private readonly int _port;
     private Thread? _thread;
@@ -25,10 +26,11 @@ public sealed class WpfHost
     private MainWindow? _window;
     private WpfTrayIcon? _tray;
 
-    public WpfHost(SoundLibrary library, PlaybackEngine engine, NetworkAdapter adapter, int port)
+    public WpfHost(SoundLibrary library, PlaybackEngine engine, DeviceLocator locator, NetworkAdapter adapter, int port)
     {
         _library = library;
         _engine = engine;
+        _locator = locator;
         _adapter = adapter;
         _port = port;
     }
@@ -78,7 +80,7 @@ public sealed class WpfHost
                 // closes — but we hide the window to tray on close, so use Explicit.
                 ShutdownMode = ShutdownMode.OnExplicitShutdown,
             };
-            _window = new MainWindow(_library, _engine);
+            _window = new MainWindow(_library, _engine, _locator, _port);
             _tray = new WpfTrayIcon(_library, _adapter, _port, _window);
             _window.Show();
             ready.Set();
