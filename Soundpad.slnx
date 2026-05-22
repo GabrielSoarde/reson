@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Soundpad/Soundpad.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Soundpad.Tests/Soundpad.Tests.csproj" />
+  </Folder>
+</Solution>
