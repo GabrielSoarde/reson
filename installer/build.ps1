@@ -14,6 +14,13 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $repoRoot
 
+Write-Host "==> Stopping any running Soundpad.exe (avoids file lock during publish)..."
+Get-Process -Name 'Soundpad' -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "    Killing PID $($_.Id)"
+    $_ | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Milliseconds 500
+
 Write-Host "==> Cleaning previous publish output..."
 Remove-Item -Recurse -Force "src\Soundpad\bin\Release\net8.0-windows\win-x64\publish" -ErrorAction SilentlyContinue
 
