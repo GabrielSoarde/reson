@@ -145,4 +145,53 @@ public class SoundLibrary
         if (GridPositioner.NextFree(grid, sounds) is not null) return grid;
         return grid with { Rows = grid.Rows + 1 };
     }
+
+    public void AutoScan()
+    {
+        lock (_lock)
+        {
+            if (!Directory.Exists(_opts.SoundsDir)) return;
+            var known = new HashSet<string>(_config.Sounds.Select(s => s.File), StringComparer.OrdinalIgnoreCase);
+            var newEntries = new List<SoundEntry>();
+            var grid = _config.Grid;
+            var working = new List<SoundEntry>(_config.Sounds);
+            foreach (var file in Directory.EnumerateFiles(_opts.SoundsDir).OrderBy(f => f))
+            {
+                var name = Path.GetFileName(file);
+                if (known.Contains(name)) continue;
+                var ext = Path.GetExtension(name).ToLowerInvariant();
+                if (!AllowedExtensions.Contains(ext)) continue;
+                var id = DeriveIdFromFilename(name, working);
+                grid = EnsureCellAvailable(grid, working);
+                var pos = GridPositioner.NextFree(grid, working);
+                var entry = new SoundEntry { Id = id, File = name, Label = id, Position = pos };
+                working.Add(entry);
+                newEntries.Add(entry);
+            }
+            if (newEntries.Count == 0 && grid == _config.Grid) return;
+            _config = _config with { Grid = grid, Sounds = working };
+            SaveLocked();
+        }
+    }
+
+    public void RepairInvariants()
+    {
+        lock (_lock)
+        {
+            var repaired = GridPositioner.RepairDuplicates(_config.Grid, _config.Sounds);
+            if (repaired.SequenceEqual(_config.Sounds)) return;
+            _config = _config with { Sounds = repaired };
+            SaveLocked();
+        }
+    }
+
+    public IReadOnlyList<SoundRuntimeStatus> GetRuntimeStatuses()
+    {
+        lock (_lock)
+        {
+            return _config.Sounds
+                .Select(s => new SoundRuntimeStatus(s.Id, !File.Exists(Path.Combine(_opts.SoundsDir, s.File))))
+                .ToList();
+        }
+    }
 }
