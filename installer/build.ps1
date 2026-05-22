@@ -34,6 +34,24 @@ if (-not (Test-Path "$publishDir\Soundpad.exe")) {
 }
 Write-Host "    Published to: $publishDir"
 
+# Extract VB-Cable bundle if present so Inno Setup can include the .exe directly.
+# (Skipping if the ZIP isn't there is fine — Soundpad.iss falls back to the
+# "open download page" path it already had.)
+$vbcZip = "installer\dependencies\VBCABLE_Driver_Pack.zip"
+$vbcDir = "installer\dependencies\vbcable"
+if (Test-Path $vbcZip) {
+  Write-Host "==> Extracting VB-Cable bundle..."
+  if (Test-Path $vbcDir) { Remove-Item -Recurse -Force $vbcDir }
+  Expand-Archive -LiteralPath $vbcZip -DestinationPath $vbcDir
+  if (-not (Test-Path "$vbcDir\VBCABLE_Setup_x64.exe")) {
+    throw "VBCABLE_Setup_x64.exe not found inside $vbcZip"
+  }
+  Write-Host "    Extracted to: $vbcDir"
+} else {
+  Write-Host "==> VB-Cable ZIP not found at $vbcZip — installer will use download-page fallback"
+  if (Test-Path $vbcDir) { Remove-Item -Recurse -Force $vbcDir }
+}
+
 # Locate Inno Setup compiler
 $isccCandidates = @(
   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
