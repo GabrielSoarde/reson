@@ -25,6 +25,30 @@
 
   let state = null;
   let nowPlaying = null;
+  const recentTaps = new Set();
+  const vibrate = pattern => { if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch {} } };
+
+  function spawnRipple(cell, ev) {
+    const rect = cell.getBoundingClientRect();
+    const x = (ev.clientX != null ? ev.clientX - rect.left : rect.width / 2);
+    const y = (ev.clientY != null ? ev.clientY - rect.top : rect.height / 2);
+    const size = Math.max(rect.width, rect.height) * 0.6;
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = (x - size / 2) + 'px';
+    ripple.style.top = (y - size / 2) + 'px';
+    ripple.addEventListener('animationend', () => ripple.remove());
+    cell.appendChild(ripple);
+  }
+
+  function triggerPlay(s) {
+    if (recentTaps.has(s.id)) return;
+    recentTaps.add(s.id);
+    setTimeout(() => recentTaps.delete(s.id), 120);
+    vibrate(15);
+    api(`/api/play/${s.id}`, { method: 'POST' });
+  }
 
   function render() {
     if (!state) return;
@@ -41,7 +65,8 @@
         cell.textContent = s ? s.label : '+';
         if (s) {
           cell.style.backgroundColor = s.color || '#3b82f6';
-          cell.addEventListener('click', () => api(`/api/play/${s.id}`, { method: 'POST' }));
+          cell.addEventListener('pointerdown', ev => spawnRipple(cell, ev));
+          cell.addEventListener('click', () => triggerPlay(s));
         }
         grid.appendChild(cell);
       }
@@ -76,7 +101,10 @@
     ws.onclose = () => setTimeout(() => { backoff = Math.min(backoff * 2, 30000); connectWs(); }, backoff);
   }
 
-  document.getElementById('stop').addEventListener('click', () => api('/api/stop', { method: 'POST' }));
+  document.getElementById('stop').addEventListener('click', () => {
+    vibrate([30, 40, 30]);
+    api('/api/stop', { method: 'POST' });
+  });
 
   document.getElementById('monitor').addEventListener('change', e => {
     api('/api/monitor', { method: 'POST', body: JSON.stringify({ enabled: e.target.checked }) });
