@@ -48,4 +48,42 @@ public class DeviceLocatorTests
         var loc = new DeviceLocator(MakeEnum("Speakers", "Headphones", "VoiceMeeter Input"));
         loc.EnumerateRenderDeviceNames().Should().BeEquivalentTo("Speakers", "Headphones", "VoiceMeeter Input");
     }
+
+    [Fact]
+    public void FindVbCable_Detects_Standard_Input()
+    {
+        var loc = new DeviceLocator(MakeEnum("Speakers", "CABLE Input (VB-Audio Virtual Cable)"));
+        loc.FindVbCableInput().Should().Contain("CABLE Input");
+    }
+
+    [Fact]
+    public void FindVbCable_Returns_Null_When_Absent()
+    {
+        var loc = new DeviceLocator(MakeEnum("Speakers", "Headphones"));
+        loc.FindVbCableInput().Should().BeNull();
+    }
+
+    [Fact]
+    public void FindVirtualBridge_Prefers_VoiceMeeter_Over_VbCable_When_Both_Present()
+    {
+        var loc = new DeviceLocator(MakeEnum(
+            "Speakers",
+            "CABLE Input (VB-Audio Virtual Cable)",
+            "VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)"));
+        loc.FindVirtualAudioBridge().Should().Contain("VoiceMeeter");
+    }
+
+    [Fact]
+    public void FindVirtualBridge_Falls_Back_To_VbCable()
+    {
+        var loc = new DeviceLocator(MakeEnum("Speakers", "CABLE Input (VB-Audio Virtual Cable)"));
+        loc.FindVirtualAudioBridge().Should().Contain("CABLE Input");
+    }
+
+    [Fact]
+    public void FindVirtualBridge_Returns_Null_When_Neither_Installed()
+    {
+        var loc = new DeviceLocator(MakeEnum("Speakers", "Headphones"));
+        loc.FindVirtualAudioBridge().Should().BeNull();
+    }
 }

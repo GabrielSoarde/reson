@@ -97,8 +97,8 @@ if (!isTesting && library.Config.AudioDevice is null)
     try
     {
         var loc = app.Services.GetRequiredService<DeviceLocator>();
-        var vm = loc.FindVoiceMeeterInput();
-        if (vm is not null) { library.MutateConfig(c => c with { AudioDevice = vm }); library.Save(); }
+        var bridge = loc.FindVirtualAudioBridge();
+        if (bridge is not null) { library.MutateConfig(c => c with { AudioDevice = bridge }); library.Save(); }
     }
     catch (Exception ex)
     {
