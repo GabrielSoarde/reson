@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Soundpad</title>
+</head>
+<body>
+  <header>
+    <h1>SOUNDPAD</h1>
+    <label class="monitor-toggle">
+      <input type="checkbox" id="monitor" />
+      <span>🎧 Monitor</span>
+    </label>
+  </header>
+  <main>
+    <div id="grid" class="grid"></div>
+    <div id="orphans" class="orphans" hidden>
+      <h2>Sem posição</h2>
+      <div id="orphans-list"></div>
+    </div>
+  </main>
+  <footer>
+    <button id="stop" class="stop">■ STOP</button>
+    <div class="vol-row">
+      <input id="volume" type="range" min="0" max="100" />
+      <span id="vol-value">--</span>
+      <button id="settings" class="icon" title="Settings">⚙</button>
+    </div>
+  </footer>
+  <script src="/app.js"></script>
+</body>
+</html>
