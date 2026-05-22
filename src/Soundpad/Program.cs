@@ -32,6 +32,7 @@ builder.Services.AddSingleton<IWavePlayerFactory, NAudioWavePlayerFactory>();
 builder.Services.AddSingleton<ISoundDecoder, NAudioSoundDecoder>();
 builder.Services.AddSingleton<SoundCache>(sp => new SoundCache(sp.GetRequiredService<ISoundDecoder>(), 50));
 builder.Services.AddSingleton<PlaybackEngine>();
+builder.Services.AddSingleton<Soundpad.Api.StateHub>();
 
 var app = builder.Build();
 
@@ -44,6 +45,21 @@ engine.SetMonitorEnabled(library.Config.MonitorEnabled);
 engine.SetVolume(library.Config.Volume);
 engine.SetLatency(library.Config.LatencyMs);
 engine.Start();
+
+app.UseWebSockets();
+
+var hub = app.Services.GetRequiredService<Soundpad.Api.StateHub>();
+engine.Playing += id => _ = hub.BroadcastAsync("playing", new { soundId = id });
+engine.Stopped += () => _ = hub.BroadcastAsync("stopped", new { });
+engine.MonitorChanged += b => _ = hub.BroadcastAsync("monitorChanged", new { enabled = b });
+engine.VolumeChanged += v => _ = hub.BroadcastAsync("volumeChanged", new { value = v });
+engine.MonitorDeviceChanged += d => _ = hub.BroadcastAsync("monitorDeviceChanged", new { device = d });
+
+app.Map("/ws", async ctx =>
+{
+    if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = 400; return; }
+    await hub.AcceptAsync(ctx);
+});
 
 app.UseStaticFiles();
 app.MapGet("/", () => Results.File(Path.Combine(rootDir, "wwwroot", "index.html"), "text/html"));
