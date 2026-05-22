@@ -28,4 +28,13 @@
     <Using Include="System.IO" />
     <Using Include="System.Net.Http" />
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      Copy the sample sounds at the repo root to the runtime sounds/ folder
+      next to the .exe on every build and publish. Without this, `dotnet run`
+      and the published .exe see an empty sounds/ folder on first boot and
+      the AutoScan finds nothing to register.
+    -->
+    <None Include="..\..\sounds\**\*.*" Link="sounds\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
