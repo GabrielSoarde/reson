@@ -1,16 +1,15 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Soundpad.Sound;
 
 namespace Soundpad.Tests.Api;
 
-public class SoundEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
+public class SoundEndpointsTests : IClassFixture<TestingWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    public SoundEndpointsTests(WebApplicationFactory<Program> f) { _factory = f; }
+    private readonly TestingWebApplicationFactory _factory;
+    public SoundEndpointsTests(TestingWebApplicationFactory f) { _factory = f; }
 
     private HttpClient Auth()
     {

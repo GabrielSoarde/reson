@@ -1,28 +1,64 @@
 using Microsoft.AspNetCore.Http.Features;
 using Soundpad;
 using Soundpad.Audio;
+using Soundpad.Network;
 using Soundpad.Sound;
+using Soundpad.Tray;
+
+// Detect the Testing environment (set by WebApplicationFactory in integration tests)
+// BEFORE any side effects so we can skip port binding, adapter detection, file writes,
+// and tray UI that would race with concurrent test fixtures.
+var isTesting = string.Equals(
+    Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+    "Testing", StringComparison.OrdinalIgnoreCase);
 
 var rootDir = AppContext.BaseDirectory;
+Directory.CreateDirectory(Path.Combine(rootDir, "sounds"));
 var libOpts = new SoundLibraryOptions(rootDir);
-Directory.CreateDirectory(libOpts.SoundsDir);
 
 var library = new SoundLibrary(libOpts);
 library.Load();
 library.RepairInvariants();
 library.AutoScan();
 
+int boundPort = isTesting ? library.Config.Port : PickPort(library.Config.Port);
+if (!isTesting && boundPort != library.Config.Port)
+{
+    library.MutateConfig(c => c with { Port = boundPort });
+    library.Save();
+}
+
+NetworkAdapter? adapter = null;
+if (!isTesting)
+{
+    var netProvider = new SystemNetworkInterfaceProvider();
+    var picker = new LanAdapterPicker(netProvider);
+    adapter = picker.Pick(library.Config.PreferredNetworkAdapter);
+    if (adapter.Id != library.Config.PreferredNetworkAdapter)
+    {
+        library.MutateConfig(c => c with { PreferredNetworkAdapter = adapter.Id });
+        library.Save();
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.ConfigureKestrel(o =>
+if (!isTesting)
 {
-    o.Limits.MaxRequestBodySize = SoundLibrary.MaxUploadBytes;
-    o.ListenAnyIP(library.Config.Port);
-});
-builder.Services.Configure<FormOptions>(o =>
+    builder.WebHost.ConfigureKestrel(o =>
+    {
+        o.Limits.MaxRequestBodySize = SoundLibrary.MaxUploadBytes;
+        o.ListenAnyIP(boundPort);
+    });
+}
+else
 {
-    o.MultipartBodyLengthLimit = SoundLibrary.MaxUploadBytes;
-});
+    builder.WebHost.ConfigureKestrel(o =>
+    {
+        o.Limits.MaxRequestBodySize = SoundLibrary.MaxUploadBytes;
+    });
+}
+builder.Services.Configure<FormOptions>(o => { o.MultipartBodyLengthLimit = SoundLibrary.MaxUploadBytes; });
 
 builder.Services.AddSingleton(library);
 builder.Services.AddSingleton(new AppOptions(rootDir));
@@ -30,13 +66,26 @@ builder.Services.AddSingleton<IAudioDeviceEnumerator, WasapiAudioDeviceEnumerato
 builder.Services.AddSingleton<DeviceLocator>();
 builder.Services.AddSingleton<IWavePlayerFactory, NAudioWavePlayerFactory>();
 builder.Services.AddSingleton<ISoundDecoder, NAudioSoundDecoder>();
-builder.Services.AddSingleton<SoundCache>(sp => new SoundCache(sp.GetRequiredService<ISoundDecoder>(), 50));
+builder.Services.AddSingleton(sp => new SoundCache(sp.GetRequiredService<ISoundDecoder>(), 50));
 builder.Services.AddSingleton<PlaybackEngine>();
 builder.Services.AddSingleton<Soundpad.Api.StateHub>();
 
 var app = builder.Build();
 
-app.UseMiddleware<Soundpad.Security.AuthTokenMiddleware>();
+if (!isTesting && library.Config.AudioDevice is null)
+{
+    try
+    {
+        var loc = app.Services.GetRequiredService<DeviceLocator>();
+        var vm = loc.FindVoiceMeeterInput();
+        if (vm is not null) { library.MutateConfig(c => c with { AudioDevice = vm }); library.Save(); }
+    }
+    catch (Exception ex)
+    {
+        // In headless/test environments the audio device enumerator may fail. Don't crash bootstrap.
+        Console.Error.WriteLine($"VoiceMeeter auto-detection skipped: {ex.Message}");
+    }
+}
 
 var engine = app.Services.GetRequiredService<PlaybackEngine>();
 engine.SetGameDevice(library.Config.AudioDevice);
@@ -46,8 +95,6 @@ engine.SetVolume(library.Config.Volume);
 engine.SetLatency(library.Config.LatencyMs);
 engine.Start();
 
-app.UseWebSockets();
-
 var hub = app.Services.GetRequiredService<Soundpad.Api.StateHub>();
 engine.Playing += id => _ = hub.BroadcastAsync("playing", new { soundId = id });
 engine.Stopped += () => _ = hub.BroadcastAsync("stopped", new { });
@@ -55,20 +102,52 @@ engine.MonitorChanged += b => _ = hub.BroadcastAsync("monitorChanged", new { ena
 engine.VolumeChanged += v => _ = hub.BroadcastAsync("volumeChanged", new { value = v });
 engine.MonitorDeviceChanged += d => _ = hub.BroadcastAsync("monitorDeviceChanged", new { device = d });
 
+app.UseMiddleware<Soundpad.Security.AuthTokenMiddleware>();
+app.UseWebSockets();
+app.UseStaticFiles();
+
+// Use ContentRootPath so the path resolves correctly in both production
+// (== AppContext.BaseDirectory) and integration tests (where WebApplicationFactory
+// pins ContentRootPath to the SUT project dir via MvcTestingAppManifest.json).
+var webRootDir = app.Environment.ContentRootPath;
+app.MapGet("/", () => Results.File(Path.Combine(webRootDir, "wwwroot", "index.html"), "text/html"));
 app.Map("/ws", async ctx =>
 {
     if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = 400; return; }
     await hub.AcceptAsync(ctx);
 });
-
 Soundpad.Api.PlaybackEndpoints.Map(app);
 Soundpad.Api.SoundEndpoints.Map(app);
 
-app.UseStaticFiles();
-app.MapGet("/", () => Results.File(Path.Combine(rootDir, "wwwroot", "index.html"), "text/html"));
+TrayIconHost? tray = null;
+if (!isTesting && adapter is not null)
+{
+    tray = new TrayIconHost(library, adapter, boundPort);
+    tray.Start();
+}
 
-app.Lifetime.ApplicationStopping.Register(() => engine.Shutdown());
+app.Lifetime.ApplicationStopping.Register(() => { try { tray?.Stop(); } catch { } engine.Shutdown(); });
+
+if (!isTesting && adapter is not null)
+{
+    Console.WriteLine($"Soundpad rodando em http://{adapter.IPv4.First()}:{boundPort}/?t=<token-redacted>");
+}
 
 app.Run();
+
+static int PickPort(int desired)
+{
+    for (int p = desired; p < desired + 10; p++)
+    {
+        try
+        {
+            using var s = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, p);
+            s.Start(); s.Stop();
+            return p;
+        }
+        catch (System.Net.Sockets.SocketException) { }
+    }
+    throw new InvalidOperationException($"No free port from {desired} to {desired + 9}");
+}
 
 public partial class Program { }

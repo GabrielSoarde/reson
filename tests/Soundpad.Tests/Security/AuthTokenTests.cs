@@ -1,14 +1,13 @@
 using System.Net;
 using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Soundpad.Tests.Security;
 
-public class AuthTokenTests : IClassFixture<WebApplicationFactory<Program>>
+public class AuthTokenTests : IClassFixture<TestingWebApplicationFactory>
 {
     private readonly HttpClient _client;
 
-    public AuthTokenTests(WebApplicationFactory<Program> f)
+    public AuthTokenTests(TestingWebApplicationFactory f)
     {
         _client = f.CreateClient();
     }

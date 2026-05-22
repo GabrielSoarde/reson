@@ -1,12 +1,11 @@
 using FluentAssertions;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Soundpad.Tests.Api;
 
-public class StateHubTests : IClassFixture<WebApplicationFactory<Program>>
+public class StateHubTests : IClassFixture<TestingWebApplicationFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    public StateHubTests(WebApplicationFactory<Program> f) { _factory = f; }
+    private readonly TestingWebApplicationFactory _factory;
+    public StateHubTests(TestingWebApplicationFactory f) { _factory = f; }
 
     [Fact]
     public async Task WS_Without_Token_Rejected_With_401()
