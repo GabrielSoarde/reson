@@ -88,6 +88,32 @@ public sealed class MainWindow : Window
         _engine.MonitorChanged += _onMonitorChanged;
         _library.Changed += _onLibraryChanged;
 
+        Loaded += (_, _) => WarnIfNoAudioDevice();
+    }
+
+    private void WarnIfNoAudioDevice()
+    {
+        if (!string.IsNullOrEmpty(_library.Config.AudioDevice)) return;
+        var result = System.Windows.MessageBox.Show(
+            "Nenhum cabo de áudio virtual foi detectado.\n\n" +
+            "O Soundpad precisa de VB-Cable ou VoiceMeeter instalado para enviar som ao Discord/Valorant.\n\n" +
+            "Deseja abrir a página de download do VB-Cable agora?",
+            "Soundpad — dispositivo de áudio ausente",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (result == System.Windows.MessageBoxResult.Yes)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://vb-audio.com/Cable/",
+                    UseShellExecute = true,
+                });
+            }
+            catch { /* user can navigate manually */ }
+        }
+
         Closing += OnClosingHideToTray;
         Closed += OnClosedUnsubscribe;
     }
