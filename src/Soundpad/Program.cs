@@ -35,6 +35,8 @@ builder.Services.AddSingleton<PlaybackEngine>();
 
 var app = builder.Build();
 
+app.UseMiddleware<Soundpad.Security.AuthTokenMiddleware>();
+
 var engine = app.Services.GetRequiredService<PlaybackEngine>();
 engine.SetGameDevice(library.Config.AudioDevice);
 engine.SetMonitorDevice(library.Config.MonitorDevice);
