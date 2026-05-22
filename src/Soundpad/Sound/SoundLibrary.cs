@@ -194,4 +194,89 @@ public class SoundLibrary
                 .ToList();
         }
     }
+
+    public void UpdateSound(string id, string? label = null, string? color = null,
+                            string? icon = null, GridPosition? position = null,
+                            bool clearPosition = false)
+    {
+        lock (_lock)
+        {
+            var idx = _config.Sounds.ToList().FindIndex(s => s.Id == id);
+            if (idx < 0) throw new InvalidOperationException($"Unknown sound id: {id}");
+
+            // If a position move is requested, do the swap on the ORIGINAL list so
+            // GridPositioner.Swap can read the moving entry's pre-move position to
+            // hand it to the displaced occupant. Then apply field updates on top.
+            List<SoundEntry> sounds;
+            if (position is not null && !clearPosition)
+            {
+                sounds = GridPositioner.Swap(_config.Sounds, id, position);
+            }
+            else
+            {
+                sounds = _config.Sounds.ToList();
+            }
+
+            var i = sounds.FindIndex(s => s.Id == id);
+            var current = sounds[i];
+            sounds[i] = current with
+            {
+                Label = label ?? current.Label,
+                Color = color ?? current.Color,
+                Icon = icon ?? current.Icon,
+                Position = clearPosition ? null : current.Position,
+            };
+            _config = _config with { Sounds = sounds };
+            SaveLocked();
+        }
+    }
+
+    public void DeleteSound(string id, bool deleteFile)
+    {
+        lock (_lock)
+        {
+            var entry = _config.Sounds.FirstOrDefault(s => s.Id == id)
+                ?? throw new InvalidOperationException($"Unknown sound id: {id}");
+            if (deleteFile)
+            {
+                var path = Path.Combine(_opts.SoundsDir, entry.File);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            _config = _config with { Sounds = _config.Sounds.Where(s => s.Id != id).ToList() };
+            SaveLocked();
+        }
+    }
+
+    public void ResizeGrid(int cols, int rows)
+    {
+        lock (_lock)
+        {
+            var newGrid = new GridLayout(cols, rows);
+            var updated = _config.Sounds.Select(s =>
+                s.Position is not null && !newGrid.Contains(s.Position)
+                    ? s with { Position = null } : s).ToList();
+            _config = _config with { Grid = newGrid, Sounds = updated };
+            SaveLocked();
+        }
+    }
+
+    public void ApplyLayout(IEnumerable<(string Id, GridPosition? Position)> placements)
+    {
+        lock (_lock)
+        {
+            var list = placements.ToList();
+            var nonNull = list.Where(p => p.Position is not null).ToList();
+            if (nonNull.Select(p => p.Position).Distinct().Count() != nonNull.Count)
+                throw new InvalidOperationException("Duplicate positions in layout");
+            foreach (var (entryId, pos) in list)
+                if (pos is not null && !_config.Grid.Contains(pos))
+                    throw new InvalidOperationException($"Position {pos} out of grid {_config.Grid}");
+            var map = list.ToDictionary(p => p.Id, p => p.Position);
+            var updated = _config.Sounds
+                .Select(s => map.TryGetValue(s.Id, out var p) ? s with { Position = p } : s)
+                .ToList();
+            _config = _config with { Sounds = updated };
+            SaveLocked();
+        }
+    }
 }
