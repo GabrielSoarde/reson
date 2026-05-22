@@ -88,15 +88,89 @@ public class PlaybackEngine
     {
         switch (cmd)
         {
-            case PlayCommand: break;
-            case StopCommand: break;
-            case VolumeCommand: break;
-            case SetMonitorEnabledCommand: break;
-            case SetMonitorDeviceCommand: break;
-            case SetGameDeviceCommand: break;
-            case PlaybackEndedCommand: break;
+            case PlayCommand p: HandlePlay(p); break;
+            case StopCommand: HandleStop(); break;
+            case VolumeCommand v: HandleVolume(v.Value); break;
+            case SetMonitorEnabledCommand m: HandleSetMonitorEnabled(m.Enabled); break;
+            case SetMonitorDeviceCommand md: HandleSetMonitorDevice(md.Device); break;
+            case SetGameDeviceCommand gd: _gameDevice = gd.Device; break;
+            case PlaybackEndedCommand pe: HandlePlaybackEnded(pe); break;
             case ShutdownCommand: /* handled by Loop */ break;
         }
+    }
+
+    private void HandlePlay(PlayCommand cmd)
+    {
+        if (string.IsNullOrEmpty(_gameDevice))
+        {
+            Console.Error.WriteLine("PlayCommand: no game device configured");
+            return;
+        }
+        DisposeAllPlayers();
+        var token = Interlocked.Increment(ref _playToken);
+        var cached = _cache.Get(cmd.FilePath);
+
+        (_gamePlayer, _gameStream, _gameMs, _gameVol) = OpenStream(cached, _gameDevice);
+        _gamePlayer!.PlaybackStopped += (s, e) => _queue.Add(new PlaybackEndedCommand(token, IsGameStream: true));
+        _gamePlayer.Init(_gameVol);
+        _gamePlayer.Play();
+
+        if (_monitorEnabled && !string.IsNullOrEmpty(_monitorDevice))
+        {
+            (_monitorPlayer, _monitorStream, _monitorMs, _monitorVol) = OpenStream(cached, _monitorDevice);
+            _monitorPlayer!.PlaybackStopped += (s, e) => _queue.Add(new PlaybackEndedCommand(token, IsGameStream: false));
+            _monitorPlayer.Init(_monitorVol);
+            _monitorPlayer.Play();
+        }
+
+        _nowPlaying = cmd.SoundId;
+        Playing?.Invoke(cmd.SoundId);
+    }
+
+    private (IWavePlayer Player, RawSourceWaveStream Stream, MemoryStream Ms, NAudio.Wave.SampleProviders.VolumeSampleProvider Vol)
+        OpenStream(CachedSound cached, string deviceName)
+    {
+        var ms = new MemoryStream(cached.PcmBytes, writable: false);
+        var raw = new RawSourceWaveStream(ms, cached.Format);
+        var vol = new NAudio.Wave.SampleProviders.VolumeSampleProvider(raw.ToSampleProvider()) { Volume = _volume / 100f };
+        var player = _factory.Create(deviceName, _latencyMs);
+        return (player, raw, ms, vol);
+    }
+
+    private void HandleStop()
+    {
+        DisposeAllPlayers();
+        _nowPlaying = null;
+        Stopped?.Invoke();
+    }
+
+    private void HandleVolume(int v)
+    {
+        _volume = Math.Clamp(v, 0, 100);
+        if (_gameVol is not null) _gameVol.Volume = _volume / 100f;
+        if (_monitorVol is not null) _monitorVol.Volume = _volume / 100f;
+        VolumeChanged?.Invoke(_volume);
+    }
+
+    private void HandleSetMonitorEnabled(bool b)
+    {
+        _monitorEnabled = b;
+        MonitorChanged?.Invoke(b);
+    }
+
+    private void HandleSetMonitorDevice(string? d)
+    {
+        _monitorDevice = d;
+        MonitorDeviceChanged?.Invoke(d);
+    }
+
+    private void HandlePlaybackEnded(PlaybackEndedCommand cmd)
+    {
+        if (cmd.PlayToken != _playToken) return; // stale
+        if (!cmd.IsGameStream) return; // monitor's stop is not authoritative
+        DisposeAllPlayers();
+        _nowPlaying = null;
+        Stopped?.Invoke();
     }
 
     private void DisposeAllPlayers()
