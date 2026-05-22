@@ -61,6 +61,8 @@ app.Map("/ws", async ctx =>
     await hub.AcceptAsync(ctx);
 });
 
+Soundpad.Api.PlaybackEndpoints.Map(app);
+
 app.UseStaticFiles();
 app.MapGet("/", () => Results.File(Path.Combine(rootDir, "wwwroot", "index.html"), "text/html"));
 
