@@ -52,9 +52,9 @@ if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
 
 $setupExe = "dist\SoundpadSetup.exe"
 if (Test-Path $setupExe) {
-  $size = (Get-Item $setupExe).Length / 1MB
+  $sizeMb = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
   Write-Host ""
-  Write-Host "==> Done. Installer: $setupExe ({0:N1} MB)" -f $size
+  Write-Host "==> Done. Installer: $setupExe ($sizeMb MB)"
 } else {
   throw "Installer not generated"
 }
