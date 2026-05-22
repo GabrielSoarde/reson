@@ -22,6 +22,14 @@ public class SoundLibrary
 
     public SoundConfig Config { get { lock (_lock) { return _config; } } }
 
+    /// <summary>
+    /// Raised after the in-memory config has been persisted via SaveLocked().
+    /// Fires on whatever thread called Save/Upload/UpdateSound/etc — the WPF
+    /// MainWindow subscribes and marshals the rebuild onto its Dispatcher.
+    /// Handlers run OUTSIDE the library lock to avoid re-entrancy.
+    /// </summary>
+    public event Action? Changed;
+
     public void Load()
     {
         lock (_lock)
@@ -50,6 +58,7 @@ public class SoundLibrary
     public void Save()
     {
         lock (_lock) { SaveLocked(); }
+        Changed?.Invoke();
     }
 
     private void SaveLocked()
@@ -72,6 +81,7 @@ public class SoundLibrary
         if (content.CanSeek && content.Length > MaxUploadBytes)
             throw new InvalidOperationException("File too large");
 
+        UploadResult result;
         lock (_lock)
         {
             Directory.CreateDirectory(_opts.SoundsDir);
@@ -93,7 +103,7 @@ public class SoundLibrary
                 var entry = new SoundEntry { Id = id, File = finalName, Label = id, Position = pos };
                 _config = _config with { Grid = grid, Sounds = new List<SoundEntry>(_config.Sounds) { entry } };
                 SaveLocked();
-                return new UploadResult(entry, finalName);
+                result = new UploadResult(entry, finalName);
             }
             catch
             {
@@ -103,6 +113,8 @@ public class SoundLibrary
                 throw;
             }
         }
+        Changed?.Invoke();
+        return result;
     }
 
     private (FileStream Stream, string FileName) CreateExclusive(string sanitized)
@@ -148,6 +160,7 @@ public class SoundLibrary
 
     public void AutoScan()
     {
+        bool changed = false;
         lock (_lock)
         {
             if (!Directory.Exists(_opts.SoundsDir)) return;
@@ -171,18 +184,23 @@ public class SoundLibrary
             if (newEntries.Count == 0 && grid == _config.Grid) return;
             _config = _config with { Grid = grid, Sounds = working };
             SaveLocked();
+            changed = true;
         }
+        if (changed) Changed?.Invoke();
     }
 
     public void RepairInvariants()
     {
+        bool changed = false;
         lock (_lock)
         {
             var repaired = GridPositioner.RepairDuplicates(_config.Grid, _config.Sounds);
             if (repaired.SequenceEqual(_config.Sounds)) return;
             _config = _config with { Sounds = repaired };
             SaveLocked();
+            changed = true;
         }
+        if (changed) Changed?.Invoke();
     }
 
     public IReadOnlyList<SoundRuntimeStatus> GetRuntimeStatuses()
@@ -229,6 +247,7 @@ public class SoundLibrary
             _config = _config with { Sounds = sounds };
             SaveLocked();
         }
+        Changed?.Invoke();
     }
 
     public void DeleteSound(string id, bool deleteFile)
@@ -245,6 +264,7 @@ public class SoundLibrary
             _config = _config with { Sounds = _config.Sounds.Where(s => s.Id != id).ToList() };
             SaveLocked();
         }
+        Changed?.Invoke();
     }
 
     public void ResizeGrid(int cols, int rows)
@@ -258,6 +278,7 @@ public class SoundLibrary
             _config = _config with { Grid = newGrid, Sounds = updated };
             SaveLocked();
         }
+        Changed?.Invoke();
     }
 
     public void ApplyLayout(IEnumerable<(string Id, GridPosition? Position)> placements)
@@ -278,5 +299,6 @@ public class SoundLibrary
             _config = _config with { Sounds = updated };
             SaveLocked();
         }
+        Changed?.Invoke();
     }
 }

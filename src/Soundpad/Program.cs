@@ -4,7 +4,7 @@ using Soundpad.Audio;
 using Soundpad.Logging;
 using Soundpad.Network;
 using Soundpad.Sound;
-using Soundpad.Tray;
+using Soundpad.Wpf;
 
 // Detect the Testing environment (set by WebApplicationFactory in integration tests)
 // BEFORE any side effects so we can skip port binding, adapter detection, file writes,
@@ -141,14 +141,22 @@ app.Map("/ws", async ctx =>
 Soundpad.Api.PlaybackEndpoints.Map(app);
 Soundpad.Api.SoundEndpoints.Map(app);
 
-TrayIconHost? tray = null;
+// Spin up the WPF native window + tray on its own STA thread. The WPF
+// Application owns the tray icon; Kestrel keeps blocking on the main thread.
+// Skipped under Testing so the WebApplicationFactory can host the API without
+// pulling in a UI thread.
+WpfHost? wpf = null;
 if (!isTesting && adapter is not null)
 {
-    tray = new TrayIconHost(library, adapter, boundPort);
-    tray.Start();
+    wpf = new WpfHost(library, engine, adapter, boundPort);
+    wpf.Start();
 }
 
-app.Lifetime.ApplicationStopping.Register(() => { try { tray?.Stop(); } catch { } engine.Shutdown(); });
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    try { wpf?.Stop(); } catch { /* best effort */ }
+    engine.Shutdown();
+});
 
 if (!isTesting && adapter is not null)
 {

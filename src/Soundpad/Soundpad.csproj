@@ -2,13 +2,30 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Soundpad</RootNamespace>
+    <!--
+      WPF SDK auto-detects App.xaml/MainWindow.xaml and synthesizes an entry point.
+      We use top-level statements in Program.cs as the entry point and build the
+      WPF Application in code (Wpf/WpfHost.cs), so suppress those auto-includes.
+    -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="NAudio.Vorbis" Version="1.5.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      UseWPF=true changes which namespaces the SDK injects as global usings;
+      System.IO (present under Microsoft.NET.Sdk.Web alone) drops out. Re-add it
+      explicitly so the existing IO-using files don't need per-file usings.
+      Same for System.Net.Http which Sdk.Web normally provides.
+    -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
   </ItemGroup>
 </Project>
