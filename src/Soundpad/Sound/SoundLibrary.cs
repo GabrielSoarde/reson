@@ -77,24 +77,31 @@ public class SoundLibrary
             Directory.CreateDirectory(_opts.SoundsDir);
             var sanitized = FilenameSanitizer.Sanitize(originalFilename, fallbackId: Guid.NewGuid().ToString("N"), extension: ext);
             var (fs, finalName) = CreateExclusive(sanitized);
-            using (fs)
+            var savedConfig = _config;  // snapshot for rollback
+            try
             {
-                content.CopyTo(fs);
-                if (fs.Length > MaxUploadBytes)
+                using (fs)
                 {
-                    fs.Close();
-                    File.Delete(Path.Combine(_opts.SoundsDir, finalName));
-                    throw new InvalidOperationException("File too large");
+                    content.CopyTo(fs);
+                    if (fs.Length > MaxUploadBytes)
+                        throw new InvalidOperationException("File too large");
                 }
-            }
 
-            var id = DeriveIdFromFilename(finalName, _config.Sounds);
-            var grid = EnsureCellAvailable(_config.Grid, _config.Sounds);
-            var pos = GridPositioner.NextFree(grid, _config.Sounds);
-            var entry = new SoundEntry { Id = id, File = finalName, Label = id, Position = pos };
-            _config = _config with { Grid = grid, Sounds = new List<SoundEntry>(_config.Sounds) { entry } };
-            SaveLocked();
-            return new UploadResult(entry, finalName);
+                var id = DeriveIdFromFilename(finalName, _config.Sounds);
+                var grid = EnsureCellAvailable(_config.Grid, _config.Sounds);
+                var pos = GridPositioner.NextFree(grid, _config.Sounds);
+                var entry = new SoundEntry { Id = id, File = finalName, Label = id, Position = pos };
+                _config = _config with { Grid = grid, Sounds = new List<SoundEntry>(_config.Sounds) { entry } };
+                SaveLocked();
+                return new UploadResult(entry, finalName);
+            }
+            catch
+            {
+                // Roll back disk + memory state
+                try { File.Delete(Path.Combine(_opts.SoundsDir, finalName)); } catch { /* best effort */ }
+                _config = savedConfig;
+                throw;
+            }
         }
     }
 

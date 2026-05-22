@@ -67,6 +67,16 @@ public class SoundLibraryUploadTests : IDisposable
     }
 
     [Fact]
+    public void Upload_File_Deleted_On_Too_Large()
+    {
+        var soundsCountBefore = _lib.Config.Sounds.Count;
+        Assert.Throws<InvalidOperationException>(() =>
+            _lib.Upload("big.mp3", MakeStream((int)SoundLibrary.MaxUploadBytes + 1)));
+        Directory.GetFiles(Path.Combine(_tempDir, "sounds")).Should().BeEmpty();
+        _lib.Config.Sounds.Count.Should().Be(soundsCountBefore);
+    }
+
+    [Fact]
     public void Upload_Concurrent_Same_Name_Produces_Two_Distinct_Files()
     {
         var t1 = Task.Run(() => _lib.Upload("dup.mp3", MakeStream(10)));
