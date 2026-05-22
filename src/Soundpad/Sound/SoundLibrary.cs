@@ -60,4 +60,82 @@ public class SoundLibrary
         if (File.Exists(_opts.ConfigPath)) File.Replace(tmp, _opts.ConfigPath, destinationBackupFileName: null);
         else File.Move(tmp, _opts.ConfigPath);
     }
+
+    public const long MaxUploadBytes = 26_214_400;
+    private static readonly string[] AllowedExtensions = { ".mp3", ".wav", ".ogg", ".flac" };
+
+    public UploadResult Upload(string originalFilename, Stream content)
+    {
+        var ext = Path.GetExtension(originalFilename).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(ext))
+            throw new InvalidOperationException($"Extension {ext} not allowed");
+        if (content.CanSeek && content.Length > MaxUploadBytes)
+            throw new InvalidOperationException("File too large");
+
+        lock (_lock)
+        {
+            Directory.CreateDirectory(_opts.SoundsDir);
+            var sanitized = FilenameSanitizer.Sanitize(originalFilename, fallbackId: Guid.NewGuid().ToString("N"), extension: ext);
+            var (fs, finalName) = CreateExclusive(sanitized);
+            using (fs)
+            {
+                content.CopyTo(fs);
+                if (fs.Length > MaxUploadBytes)
+                {
+                    fs.Close();
+                    File.Delete(Path.Combine(_opts.SoundsDir, finalName));
+                    throw new InvalidOperationException("File too large");
+                }
+            }
+
+            var id = DeriveIdFromFilename(finalName, _config.Sounds);
+            var grid = EnsureCellAvailable(_config.Grid, _config.Sounds);
+            var pos = GridPositioner.NextFree(grid, _config.Sounds);
+            var entry = new SoundEntry { Id = id, File = finalName, Label = id, Position = pos };
+            _config = _config with { Grid = grid, Sounds = new List<SoundEntry>(_config.Sounds) { entry } };
+            SaveLocked();
+            return new UploadResult(entry, finalName);
+        }
+    }
+
+    private (FileStream Stream, string FileName) CreateExclusive(string sanitized)
+    {
+        var stem = Path.GetFileNameWithoutExtension(sanitized);
+        var ext = Path.GetExtension(sanitized);
+        for (int i = 1; i <= 100; i++)
+        {
+            var candidate = i == 1 ? sanitized : $"{stem} ({i}){ext}";
+            var full = Path.Combine(_opts.SoundsDir, candidate);
+            try
+            {
+                var fs = new FileStream(full, FileMode.CreateNew, FileAccess.Write);
+                return (fs, candidate);
+            }
+            catch (IOException) { /* try next */ }
+        }
+        throw new InvalidOperationException("Too many filename collisions");
+    }
+
+    private static string DeriveIdFromFilename(string filename, IReadOnlyList<SoundEntry> existing)
+    {
+        var stem = Path.GetFileNameWithoutExtension(filename).ToLowerInvariant();
+        var slug = System.Text.RegularExpressions.Regex.Replace(stem, @"[^a-z0-9_]+", "-").Trim('-');
+        if (string.IsNullOrEmpty(slug)) slug = "sound";
+        var baseSlug = slug;
+        var suffix = 'a';
+        var ids = new HashSet<string>(existing.Select(e => e.Id));
+        while (ids.Contains(slug))
+        {
+            slug = $"{baseSlug}-{suffix}";
+            suffix = (char)(suffix + 1);
+            if (suffix > 'z') throw new InvalidOperationException("Cannot derive unique id");
+        }
+        return slug;
+    }
+
+    private static GridLayout EnsureCellAvailable(GridLayout grid, IReadOnlyList<SoundEntry> sounds)
+    {
+        if (GridPositioner.NextFree(grid, sounds) is not null) return grid;
+        return grid with { Rows = grid.Rows + 1 };
+    }
 }
