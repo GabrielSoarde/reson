@@ -13,16 +13,41 @@ var isTesting = string.Equals(
     Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
     "Testing", StringComparison.OrdinalIgnoreCase);
 
-var rootDir = AppContext.BaseDirectory;
+// User-writable data lives in %LOCALAPPDATA%\Soundpad\ (config.json + sounds/).
+// The exe lives in Program Files which is read-only for non-admin processes —
+// trying to write config.json.tmp there raises UnauthorizedAccessException.
+// In Testing mode we keep rootDir = AppContext.BaseDirectory so test fixtures'
+// content-root pinning continues to work.
+var rootDir = isTesting
+    ? AppContext.BaseDirectory
+    : Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Soundpad");
+Directory.CreateDirectory(rootDir);
 Directory.CreateDirectory(Path.Combine(rootDir, "sounds"));
+
+// On first run, seed sounds from the install directory's sample bundle (if present).
+// The installer drops sample mp3s next to the exe; we copy them once to the
+// user-writable sounds folder so the default grid isn't empty.
+if (!isTesting)
+{
+    var seedDir = Path.Combine(AppContext.BaseDirectory, "sounds");
+    var userSoundsDir = Path.Combine(rootDir, "sounds");
+    if (Directory.Exists(seedDir) && !Directory.EnumerateFileSystemEntries(userSoundsDir).Any())
+    {
+        foreach (var src in Directory.EnumerateFiles(seedDir))
+        {
+            try { File.Copy(src, Path.Combine(userSoundsDir, Path.GetFileName(src)), overwrite: false); }
+            catch { /* best effort; user can copy manually */ }
+        }
+    }
+}
 
 // Ensure %LOCALAPPDATA%\Soundpad\logs\ exists for the rolling file logger (skipped under Testing).
 string? logDir = null;
 if (!isTesting)
 {
-    logDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Soundpad", "logs");
+    logDir = Path.Combine(rootDir, "logs");
     Directory.CreateDirectory(logDir);
 }
 var libOpts = new SoundLibraryOptions(rootDir);
