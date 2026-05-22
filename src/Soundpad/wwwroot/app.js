@@ -50,7 +50,7 @@
     const ws = new WebSocket(`${proto}://${location.host}/ws?t=${tok}`);
     ws.onmessage = e => {
       const { type, originId: oid, payload } = JSON.parse(e.data);
-      if (oid && oid === originId && (type === 'volumeChanged' || type === 'monitorChanged')) return; // echo filter
+      if (oid && oid === originId && (type === 'volumeChanged' || type === 'monitorChanged' || type === 'monitorDeviceChanged')) return; // echo filter
       switch (type) {
         case 'playing': nowPlaying = payload.soundId; render(); break;
         case 'stopped': nowPlaying = null; render(); break;

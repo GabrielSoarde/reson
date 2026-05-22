@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Soundpad.Api.Dto;
 using Soundpad.Audio;
 using Soundpad.Sound;
@@ -35,32 +37,45 @@ public static class PlaybackEndpoints
 
         g.MapPost("/stop", (PlaybackEngine engine) => { engine.Stop(); return Results.NoContent(); });
 
-        g.MapPost("/volume", (VolumeBody body, SoundLibrary lib, PlaybackEngine engine) =>
+        // Volume/monitor endpoints broadcast directly so we can attach the caller's
+        // X-Origin-Id (used by the browser's echo-filter). The engine still emits its
+        // own events for internal listeners, but the Program.cs WS broadcast wiring
+        // skips these three event types to avoid double-broadcasts.
+        g.MapPost("/volume", async (VolumeBody body, SoundLibrary lib, PlaybackEngine engine, StateHub hub, HttpContext http) =>
         {
             var v = Math.Clamp(body.Value, 0, 100);
             engine.SetVolume(v);
             lib.MutateConfig(c => c with { Volume = v });
             lib.Save();
+            await hub.BroadcastAsync("volumeChanged", new { value = v }, OriginIdOf(http));
             return Results.NoContent();
         });
 
-        g.MapPost("/monitor", (MonitorBody body, SoundLibrary lib, PlaybackEngine engine) =>
+        g.MapPost("/monitor", async (MonitorBody body, SoundLibrary lib, PlaybackEngine engine, StateHub hub, HttpContext http) =>
         {
             engine.SetMonitorEnabled(body.Enabled);
             lib.MutateConfig(c => c with { MonitorEnabled = body.Enabled });
             lib.Save();
+            await hub.BroadcastAsync("monitorChanged", new { enabled = body.Enabled }, OriginIdOf(http));
             return Results.NoContent();
         });
 
-        g.MapPost("/monitor/device", (MonitorDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc) =>
+        g.MapPost("/monitor/device", async (MonitorDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
         {
             if (body.Device is not null && !loc.EnumerateRenderDeviceNames().Contains(body.Device, StringComparer.OrdinalIgnoreCase))
                 return Results.BadRequest(new { error = "unknown_device", available = loc.EnumerateRenderDeviceNames() });
             engine.SetMonitorDevice(body.Device);
             lib.MutateConfig(c => c with { MonitorDevice = body.Device });
             lib.Save();
+            await hub.BroadcastAsync("monitorDeviceChanged", new { device = body.Device }, OriginIdOf(http));
             return Results.NoContent();
         });
+    }
+
+    private static string? OriginIdOf(HttpContext ctx)
+    {
+        var v = ctx.Request.Headers["X-Origin-Id"].FirstOrDefault();
+        return string.IsNullOrWhiteSpace(v) ? null : v;
     }
 
     public record VolumeBody(int Value);

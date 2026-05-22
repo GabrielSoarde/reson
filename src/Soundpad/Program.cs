@@ -118,9 +118,11 @@ engine.Start();
 var hub = app.Services.GetRequiredService<Soundpad.Api.StateHub>();
 engine.Playing += id => _ = hub.BroadcastAsync("playing", new { soundId = id });
 engine.Stopped += () => _ = hub.BroadcastAsync("stopped", new { });
-engine.MonitorChanged += b => _ = hub.BroadcastAsync("monitorChanged", new { enabled = b });
-engine.VolumeChanged += v => _ = hub.BroadcastAsync("volumeChanged", new { value = v });
-engine.MonitorDeviceChanged += d => _ = hub.BroadcastAsync("monitorDeviceChanged", new { device = d });
+// Note: volumeChanged/monitorChanged/monitorDeviceChanged are broadcast directly
+// from the HTTP endpoints in PlaybackEndpoints so the request's X-Origin-Id can be
+// propagated into the envelope (enables the browser echo-filter). We deliberately
+// do NOT wire engine.VolumeChanged/MonitorChanged/MonitorDeviceChanged here to
+// avoid double-broadcasting on every state mutation.
 
 app.UseMiddleware<Soundpad.Security.AuthTokenMiddleware>();
 app.UseWebSockets();
