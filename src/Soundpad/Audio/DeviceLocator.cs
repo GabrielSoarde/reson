@@ -9,6 +9,9 @@ public class DeviceLocator
     public IReadOnlyList<string> EnumerateRenderDeviceNames() =>
         _enumerator.EnumerateRenderDevices().Select(d => d.FriendlyName).ToList();
 
+    public IReadOnlyList<string> EnumerateCaptureDeviceNames() =>
+        _enumerator.EnumerateCaptureDevices().Select(d => d.FriendlyName).ToList();
+
     public string? FindVoiceMeeterInput() =>
         _enumerator.EnumerateRenderDevices()
             .Select(d => d.FriendlyName)

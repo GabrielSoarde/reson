@@ -11,6 +11,17 @@ public class DeviceLocatorTests
         var m = new Mock<IAudioDeviceEnumerator>();
         m.Setup(e => e.EnumerateRenderDevices()).Returns(
             names.Select((n, i) => new AudioDeviceInfo($"id{i}", n)).ToList());
+        m.Setup(e => e.EnumerateCaptureDevices()).Returns(Array.Empty<AudioDeviceInfo>());
+        return m.Object;
+    }
+
+    private static IAudioDeviceEnumerator MakeEnumWithCapture(string[] render, string[] capture)
+    {
+        var m = new Mock<IAudioDeviceEnumerator>();
+        m.Setup(e => e.EnumerateRenderDevices()).Returns(
+            render.Select((n, i) => new AudioDeviceInfo($"r{i}", n)).ToList());
+        m.Setup(e => e.EnumerateCaptureDevices()).Returns(
+            capture.Select((n, i) => new AudioDeviceInfo($"c{i}", n)).ToList());
         return m.Object;
     }
 
@@ -85,5 +96,14 @@ public class DeviceLocatorTests
     {
         var loc = new DeviceLocator(MakeEnum("Speakers", "Headphones"));
         loc.FindVirtualAudioBridge().Should().BeNull();
+    }
+
+    [Fact]
+    public void EnumerateCapture_Returns_Friendly_Names()
+    {
+        var loc = new DeviceLocator(MakeEnumWithCapture(
+            render: new[] { "Speakers" },
+            capture: new[] { "Logitech G935", "Webcam Mic" }));
+        loc.EnumerateCaptureDeviceNames().Should().BeEquivalentTo("Logitech G935", "Webcam Mic");
     }
 }

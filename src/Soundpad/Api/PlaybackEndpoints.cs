@@ -22,7 +22,9 @@ public static class PlaybackEndpoints
                 lib.Config.AudioDevice, lib.Config.MonitorDevice, lib.Config.MonitorEnabled,
                 loc.EnumerateRenderDeviceNames(),
                 lib.Config.Volume, lib.Config.Grid, entries,
-                engine.NowPlaying, AuthRequired: true);
+                engine.NowPlaying, AuthRequired: true,
+                MicDevice: lib.Config.MicDevice,
+                AvailableInputDevices: SafeListInputs(loc));
         });
 
         g.MapPost("/play/{soundId}", (string soundId, SoundLibrary lib, PlaybackEngine engine, AppOptions opts) =>
@@ -70,6 +72,30 @@ public static class PlaybackEndpoints
             await hub.BroadcastAsync("monitorDeviceChanged", new { device = body.Device }, OriginIdOf(http));
             return Results.NoContent();
         });
+
+        g.MapPost("/mic/device", async (MicDeviceBody body, SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc, StateHub hub, HttpContext http) =>
+        {
+            // null = revert to system default capture device — always valid.
+            if (body.Device is not null)
+            {
+                IReadOnlyList<string> available;
+                try { available = loc.EnumerateCaptureDeviceNames(); }
+                catch { available = Array.Empty<string>(); }
+                if (!available.Contains(body.Device, StringComparer.OrdinalIgnoreCase))
+                    return Results.BadRequest(new { error = "unknown_device", available });
+            }
+            engine.SetMicDevice(body.Device);
+            lib.MutateConfig(c => c with { MicDevice = body.Device });
+            lib.Save();
+            await hub.BroadcastAsync("micDeviceChanged", new { device = body.Device }, OriginIdOf(http));
+            return Results.NoContent();
+        });
+    }
+
+    private static IReadOnlyList<string> SafeListInputs(DeviceLocator loc)
+    {
+        try { return loc.EnumerateCaptureDeviceNames(); }
+        catch { return Array.Empty<string>(); }
     }
 
     private static string? OriginIdOf(HttpContext ctx)
@@ -81,4 +107,5 @@ public static class PlaybackEndpoints
     public record VolumeBody(int Value);
     public record MonitorBody(bool Enabled);
     public record MonitorDeviceBody(string? Device);
+    public record MicDeviceBody(string? Device);
 }

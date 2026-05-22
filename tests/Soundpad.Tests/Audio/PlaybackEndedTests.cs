@@ -18,21 +18,23 @@ public class PlaybackEndedTests
         _decoder.Setup(d => d.Decode(It.IsAny<string>()))
             .Returns(new CachedSound(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2), new byte[4096]));
         var cache = new SoundCache(_decoder.Object, 50);
-        var engine = new PlaybackEngine(_factory.Object, cache);
+        var engine = new PlaybackEngine(_factory.Object, cache, new FakeMicCapture());
         engine.SetGameDevice("Game");
         engine.Start();
         return engine;
     }
 
     [Fact]
-    public async Task Natural_End_Of_Game_Stream_Emits_Stopped()
+    public async Task Natural_End_Of_Game_Sound_Emits_Stopped()
     {
         var engine = Build();
         bool stopped = false;
         engine.Stopped += () => stopped = true;
         engine.Play("a", "a.mp3");
         await Task.Delay(50);
-        _players[0].RaiseStopped();
+        // New model: the long-lived game player keeps running forever.
+        // The active SoundSampleProvider signals EOF via PlaybackEnded.
+        engine.SimulateActiveSoundEnded(isGameStream: true);
         await Task.Delay(100);
         stopped.Should().BeTrue();
         engine.NowPlaying.Should().BeNull();
@@ -49,8 +51,8 @@ public class PlaybackEndedTests
         engine.Stopped += () => stopped = true;
         engine.Play("a", "a.mp3");
         await Task.Delay(50);
-        var monitor = _players.Single(p => p.DeviceName == "Headphones");
-        monitor.RaiseStopped();
+        // Monitor stream finishing is not authoritative — game stream is.
+        engine.SimulateActiveSoundEnded(isGameStream: false);
         await Task.Delay(100);
         stopped.Should().BeFalse();
         engine.NowPlaying.Should().Be("a");
@@ -63,12 +65,27 @@ public class PlaybackEndedTests
         var engine = Build();
         engine.Play("a", "a.mp3");
         await Task.Delay(50);
+        // Grab the active sound for "a" before it's replaced.
+        var aSound = engine.ActiveGameSoundForTests!;
         engine.Play("b", "b.mp3");
         await Task.Delay(50);
-        // First player got disposed when b was played. Even if its handler somehow fired:
-        _players[0].RaiseStopped(); // stale token
+        // Force a's SoundSampleProvider to raise Finished — it still posts a
+        // PlaybackEndedCommand, but with the OLD play token, so the engine
+        // must ignore it.
+        DriveToCompletion(aSound);
         await Task.Delay(100);
         engine.NowPlaying.Should().Be("b");
         engine.Shutdown();
+    }
+
+    private static void DriveToCompletion(SoundSampleProvider sound)
+    {
+        var buf = new float[1024];
+        int safetyCounter = 0;
+        while (!sound.IsFinished && safetyCounter++ < 10_000)
+        {
+            var n = sound.Read(buf, 0, buf.Length);
+            if (n == 0) break;
+        }
     }
 }

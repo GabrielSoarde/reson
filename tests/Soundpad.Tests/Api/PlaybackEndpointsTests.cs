@@ -54,4 +54,33 @@ public class PlaybackEndpointsTests : IClassFixture<TestingWebApplicationFactory
         var r = await c.PostAsJsonAsync("/api/monitor/device", new { device = "Definitely Not Real" });
         r.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task MicDevice_Null_Reverts_To_System_Default()
+    {
+        var c = AuthedClient();
+        var r = await c.PostAsJsonAsync("/api/mic/device", new { device = (string?)null });
+        r.IsSuccessStatusCode.Should().BeTrue();
+        var lib = _factory.Services.GetRequiredService<SoundLibrary>();
+        lib.Config.MicDevice.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MicDevice_Unknown_Returns_400()
+    {
+        var c = AuthedClient();
+        var r = await c.PostAsJsonAsync("/api/mic/device", new { device = "Definitely Not A Real Mic" });
+        r.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task State_Includes_MicDevice_And_AvailableInputs()
+    {
+        var c = AuthedClient();
+        var s = await c.GetFromJsonAsync<StateDto>("/api/state");
+        s.Should().NotBeNull();
+        // MicDevice starts null (system default); AvailableInputDevices may
+        // be empty on headless CI but must be non-null.
+        s!.AvailableInputDevices.Should().NotBeNull();
+    }
 }

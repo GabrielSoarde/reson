@@ -9,4 +9,6 @@ public record StateDto(
     IReadOnlyList<string> AvailableOutputDevices,
     int Volume, GridLayout Grid,
     IReadOnlyList<SoundEntryDto> Sounds,
-    string? NowPlaying, bool AuthRequired);
+    string? NowPlaying, bool AuthRequired,
+    string? MicDevice = null,
+    IReadOnlyList<string>? AvailableInputDevices = null);

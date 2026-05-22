@@ -18,7 +18,7 @@ public class PlayCommandTests
         _decoder.Setup(d => d.Decode(It.IsAny<string>()))
             .Returns(new CachedSound(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2), new byte[4096]));
         var cache = new SoundCache(_decoder.Object, 50);
-        var engine = new PlaybackEngine(_factory.Object, cache);
+        var engine = new PlaybackEngine(_factory.Object, cache, new FakeMicCapture());
         engine.SetGameDevice("VoiceMeeter Input");
         engine.Start();
         return engine;
@@ -30,6 +30,9 @@ public class PlayCommandTests
         var engine = Build();
         engine.Play("a", "a.mp3");
         await Task.Delay(100);
+        // New model: exactly one long-lived game player is built when the
+        // engine starts (or when SetGameDevice runs). Playing a sound mixes
+        // it into that player — does NOT create a new one.
         _players.Should().HaveCount(1);
         _players[0].DeviceName.Should().Be("VoiceMeeter Input");
         _players[0].PlaybackState.Should().Be(PlaybackState.Playing);
@@ -50,15 +53,18 @@ public class PlayCommandTests
     }
 
     [Fact]
-    public async Task Play_Then_Play_Stops_Previous_First()
+    public async Task Play_Then_Play_Replaces_Active_Sound_On_Same_Player()
     {
         var engine = Build();
         engine.Play("a", "a.mp3");
         await Task.Delay(50);
         engine.Play("b", "b.mp3");
         await Task.Delay(100);
-        _players[0].Disposed.Should().BeTrue();
-        _players[1].PlaybackState.Should().Be(PlaybackState.Playing);
+        // The game output is long-lived now. Playing "b" should NOT dispose
+        // the player; it should swap the active sound inside the mixer.
+        _players.Should().HaveCount(1);
+        _players[0].Disposed.Should().BeFalse();
+        _players[0].PlaybackState.Should().Be(PlaybackState.Playing);
         engine.NowPlaying.Should().Be("b");
         engine.Shutdown();
     }

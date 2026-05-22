@@ -11,7 +11,7 @@ public class AudioEngineThreadTests
     {
         var factory = new Mock<IWavePlayerFactory>();
         var cache = new SoundCache(new Mock<ISoundDecoder>().Object, capacity: 10);
-        var engine = new PlaybackEngine(factory.Object, cache);
+        var engine = new PlaybackEngine(factory.Object, cache, new FakeMicCapture());
         engine.Start();
         engine.Shutdown();
         engine.IsRunning.Should().BeFalse();
@@ -22,7 +22,7 @@ public class AudioEngineThreadTests
     {
         var factory = new Mock<IWavePlayerFactory>();
         var cache = new SoundCache(new Mock<ISoundDecoder>().Object, capacity: 10);
-        var engine = new PlaybackEngine(factory.Object, cache);
+        var engine = new PlaybackEngine(factory.Object, cache, new FakeMicCapture());
         engine.Start();
         engine.Shutdown();
         Assert.Throws<InvalidOperationException>(() => engine.Play("x", "x.mp3"));

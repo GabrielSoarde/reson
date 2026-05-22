@@ -111,6 +111,7 @@ var engine = app.Services.GetRequiredService<PlaybackEngine>();
 engine.SetGameDevice(library.Config.AudioDevice);
 engine.SetMonitorDevice(library.Config.MonitorDevice);
 engine.SetMonitorEnabled(library.Config.MonitorEnabled);
+engine.SetMicDevice(library.Config.MicDevice);
 engine.SetVolume(library.Config.Volume);
 engine.SetLatency(library.Config.LatencyMs);
 engine.Start();

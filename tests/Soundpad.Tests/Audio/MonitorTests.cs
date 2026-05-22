@@ -18,7 +18,7 @@ public class MonitorTests
         _decoder.Setup(d => d.Decode(It.IsAny<string>()))
             .Returns(new CachedSound(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2), new byte[4096]));
         var cache = new SoundCache(_decoder.Object, 50);
-        var engine = new PlaybackEngine(_factory.Object, cache);
+        var engine = new PlaybackEngine(_factory.Object, cache, new FakeMicCapture());
         engine.SetGameDevice("Game");
         engine.Start();
         return engine;

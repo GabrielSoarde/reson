@@ -19,6 +19,9 @@
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Soundpad.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!--
       UseWPF=true changes which namespaces the SDK injects as global usings;
       System.IO (present under Microsoft.NET.Sdk.Web alone) drops out. Re-add it

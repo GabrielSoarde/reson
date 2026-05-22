@@ -17,7 +17,7 @@ public class VolumeAndMonitorDeviceTests
         decoder.Setup(d => d.Decode(It.IsAny<string>()))
             .Returns(new CachedSound(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2), new byte[1024]));
         var cache = new SoundCache(decoder.Object, 50);
-        var engine = new PlaybackEngine(factory.Object, cache);
+        var engine = new PlaybackEngine(factory.Object, cache, new FakeMicCapture());
         engine.SetGameDevice("G");
         engine.Start();
         players = p;

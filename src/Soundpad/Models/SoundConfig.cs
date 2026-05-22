@@ -10,6 +10,7 @@ public record SoundConfig
     public string? PreferredNetworkAdapter { get; init; }
     public string? AudioDevice { get; init; }
     public string? MonitorDevice { get; init; }
+    public string? MicDevice { get; init; }
     public bool MonitorEnabled { get; init; }
     public int Volume { get; init; } = 80;
     public int LatencyMs { get; init; } = 50;

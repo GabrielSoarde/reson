@@ -91,6 +91,12 @@ public sealed class MainWindow : Window
         Loaded += (_, _) => WarnIfNoAudioDevice();
     }
 
+    // Note: when MicDevice in the config is null, the engine uses the system
+    // default capture device. The first-run warning below only complains about
+    // a missing virtual cable for the OUTPUT side; the mic side falls back
+    // gracefully via WasapiMicCapture.Start(null, ...). Per-device mic
+    // selection UI is deferred to a future iteration; until then users can
+    // POST /api/mic/device to override.
     private void WarnIfNoAudioDevice()
     {
         if (!string.IsNullOrEmpty(_library.Config.AudioDevice)) return;
