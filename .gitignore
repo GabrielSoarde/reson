@@ -6,3 +6,4 @@ TestResults/
 config.json
 .claude/
 *.tmp
+dist/
