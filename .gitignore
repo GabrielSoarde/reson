@@ -7,3 +7,10 @@ config.json
 .claude/
 *.tmp
 dist/
+
+# Scratch screenshots pasted during development
+/[0-9].png
+
+# VB-Cable bundle (binary; downloaded locally, not redistributed via source).
+# build.ps1 extracts the zip here. Keep the zip out of the public repo.
+installer/dependencies/
