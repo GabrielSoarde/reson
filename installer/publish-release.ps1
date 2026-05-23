@@ -98,8 +98,14 @@ if (-not (Test-Path $setupExe)) { throw "Desktop installer not produced." }
 
 Write-Host "==> Building Android APK..." -ForegroundColor Cyan
 Push-Location "mobile\reson_app"
-flutter build apk --release
+# Flutter writes progress/warnings to stderr; under ErrorActionPreference=Stop
+# that would abort the script even on a successful build. Drop to Continue and
+# gate on the exit code instead.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& flutter build apk --release 2>&1 | Write-Host
 $apkExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
 Pop-Location
 if ($apkExit -ne 0) { throw "flutter build apk failed (exit $apkExit)" }
 $apkSrc = "mobile\reson_app\build\app\outputs\flutter-apk\app-release.apk"
