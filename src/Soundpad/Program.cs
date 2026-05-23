@@ -99,7 +99,9 @@ if (!isTesting)
     }
 }
 library.RepairInvariants();
-library.AutoScan();
+// Note: no AutoScan() here. Folder-seeding happens once inside Load() on first
+// run. Re-scanning on every boot would re-import sounds the user intentionally
+// removed from a board (the file stays on disk by design).
 
 int boundPort = isTesting ? library.Config.Port : PickPort(library.Config.Port);
 if (!isTesting && boundPort != library.Config.Port)

@@ -106,20 +106,13 @@ public sealed class SoundsFolderWatcher : IDisposable
         {
             try
             {
-                if (sawAdd)
-                {
-                    // AutoScan walks the folder, adds new files, and raises
-                    // SoundLibrary.Changed itself when anything was added.
-                    _library.AutoScan();
-                }
-                if (sawDelete)
-                {
-                    // Deletes don't violate grid invariants (positions stay)
-                    // but the runtime "missing" flag flips, so the UI must
-                    // refresh. AutoScan won't fire Changed for delete-only
-                    // bursts, so nudge it explicitly.
-                    _library.NotifyExternalChange();
-                }
+                // Both adds and deletes only refresh the UI's runtime "missing"
+                // status — they never import. Importing arbitrary folder files
+                // would re-add sounds the user intentionally removed (the file
+                // stays on disk by design). New sounds are added explicitly via
+                // the "+" button / upload, which registers a single entry.
+                // Re-appearing a previously-missing file clears its missing flag.
+                _library.NotifyExternalChange();
             }
             catch (Exception ex)
             {

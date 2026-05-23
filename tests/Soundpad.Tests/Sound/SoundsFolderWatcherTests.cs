@@ -28,7 +28,7 @@ public class SoundsFolderWatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task Drop_Mp3_Triggers_AutoScan()
+    public async Task Drop_Mp3_Fires_Refresh_Without_Importing()
     {
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
@@ -40,11 +40,14 @@ public class SoundsFolderWatcherTests : IDisposable
 
         File.WriteAllBytes(Path.Combine(_soundsDir, "hello.mp3"), new byte[10]);
 
-        // Wait long enough for the FSW event + the 50ms debounce + the flush.
-        await WaitUntil(() => lib.ActiveBoard.Sounds.Any(s => s.File == "hello.mp3"), TimeSpan.FromSeconds(2));
+        await WaitUntil(() => changedCount > 0, TimeSpan.FromSeconds(2));
 
-        lib.ActiveBoard.Sounds.Should().ContainSingle(s => s.File == "hello.mp3");
+        // The watcher refreshes the UI (so a re-appearing file clears its
+        // "missing" flag) but never auto-imports — sounds are added explicitly
+        // via Upload, not by dropping files in the folder. Re-importing would
+        // resurrect sounds the user intentionally removed from the board.
         changedCount.Should().BeGreaterThan(0);
+        lib.ActiveBoard.Sounds.Should().NotContain(s => s.File == "hello.mp3");
     }
 
     [Fact]
@@ -82,12 +85,12 @@ public class SoundsFolderWatcherTests : IDisposable
         for (int i = 0; i < 5; i++)
             File.WriteAllBytes(Path.Combine(_soundsDir, $"s{i}.mp3"), new byte[10]);
 
-        await WaitUntil(() => lib.ActiveBoard.Sounds.Count == 5, TimeSpan.FromSeconds(2));
+        await WaitUntil(() => changes > 0, TimeSpan.FromSeconds(2));
+        await Task.Delay(250); // let any straggler flush settle
 
-        lib.ActiveBoard.Sounds.Should().HaveCount(5);
-        // AutoScan fires Changed at most once per flush; FSW bursts can
-        // sometimes split across two debounce windows (the first file racing
-        // ahead of the next four). Accept either pattern.
+        // Files are not auto-imported; the board stays empty. The burst is
+        // coalesced into a small number of refresh fires.
+        lib.ActiveBoard.Sounds.Should().BeEmpty();
         changes.Should().BeLessOrEqualTo(2);
     }
 

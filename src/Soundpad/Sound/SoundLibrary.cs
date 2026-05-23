@@ -64,6 +64,12 @@ public class SoundLibrary
             {
                 _config = SoundConfig.Default();
                 SaveLocked();
+                // First run only: seed the default board with whatever audio is
+                // already in the sounds/ folder (the installer drops samples there).
+                // This is the ONLY place a blanket folder-scan runs — afterwards
+                // sounds are added explicitly, so removed-but-kept files are not
+                // re-imported.
+                SeedFromFolderLocked();
                 return;
             }
             var json = File.ReadAllText(_opts.ConfigPath);
@@ -367,42 +373,56 @@ public class SoundLibrary
         return grid with { Rows = grid.Rows + 1 };
     }
 
+    /// <summary>
+    /// Import every audio file in the sounds/ folder that isn't yet referenced
+    /// by any board into the active board.
+    ///
+    /// <para><b>Use only for first-run seeding.</b> Do NOT call this on every
+    /// boot or on folder changes: removing a sound from a board intentionally
+    /// keeps the file on disk (so it can be re-added later), and a blanket
+    /// AutoScan would re-import those "orphan" files on the next launch/upload —
+    /// exactly the bug we want to avoid. New sounds are added explicitly via
+    /// <see cref="Upload"/>. See <see cref="SeedFromFolderLocked"/>.</para>
+    /// </summary>
     public void AutoScan()
     {
-        bool changed = false;
-        lock (_lock)
-        {
-            if (!Directory.Exists(_opts.SoundsDir)) return;
-            var active = ResolveActiveBoardLocked(_config);
-            // Files already referenced by ANY board count as "known" — without
-            // this, files that live in another board would be re-registered on
-            // the active board on every scan.
-            var allKnown = new HashSet<string>(
-                _config.Boards.SelectMany(b => b.Sounds).Select(s => s.File),
-                StringComparer.OrdinalIgnoreCase);
-            var newEntries = new List<SoundEntry>();
-            var grid = active.Grid;
-            var working = new List<SoundEntry>(active.Sounds);
-            foreach (var file in Directory.EnumerateFiles(_opts.SoundsDir).OrderBy(f => f))
-            {
-                var name = Path.GetFileName(file);
-                if (allKnown.Contains(name)) continue;
-                var ext = Path.GetExtension(name).ToLowerInvariant();
-                if (!AllowedExtensions.Contains(ext)) continue;
-                var id = DeriveIdFromFilename(name, working);
-                grid = EnsureCellAvailable(grid, working);
-                var pos = GridPositioner.NextFree(grid, working);
-                var entry = new SoundEntry { Id = id, File = name, Label = id, Position = pos };
-                working.Add(entry);
-                newEntries.Add(entry);
-            }
-            if (newEntries.Count == 0 && grid == active.Grid) return;
-            var updatedBoard = active with { Grid = grid, Sounds = working };
-            _config = ReplaceBoard(_config, updatedBoard);
-            SaveLocked();
-            changed = true;
-        }
+        bool changed;
+        lock (_lock) { changed = SeedFromFolderLocked(); }
         if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Folder-scan body. Assumes the lock is held and does NOT fire Changed.
+    /// Returns true if it added anything. Called once at first-run from Load().
+    /// </summary>
+    private bool SeedFromFolderLocked()
+    {
+        if (!Directory.Exists(_opts.SoundsDir)) return false;
+        var active = ResolveActiveBoardLocked(_config);
+        var allKnown = new HashSet<string>(
+            _config.Boards.SelectMany(b => b.Sounds).Select(s => s.File),
+            StringComparer.OrdinalIgnoreCase);
+        var newEntries = new List<SoundEntry>();
+        var grid = active.Grid;
+        var working = new List<SoundEntry>(active.Sounds);
+        foreach (var file in Directory.EnumerateFiles(_opts.SoundsDir).OrderBy(f => f))
+        {
+            var name = Path.GetFileName(file);
+            if (allKnown.Contains(name)) continue;
+            var ext = Path.GetExtension(name).ToLowerInvariant();
+            if (!AllowedExtensions.Contains(ext)) continue;
+            var id = DeriveIdFromFilename(name, working);
+            grid = EnsureCellAvailable(grid, working);
+            var pos = GridPositioner.NextFree(grid, working);
+            var entry = new SoundEntry { Id = id, File = name, Label = id, Position = pos };
+            working.Add(entry);
+            newEntries.Add(entry);
+        }
+        if (newEntries.Count == 0 && grid == active.Grid) return false;
+        var updatedBoard = active with { Grid = grid, Sounds = working };
+        _config = ReplaceBoard(_config, updatedBoard);
+        SaveLocked();
+        return true;
     }
 
     public void RepairInvariants()
