@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../api/models.dart';
 import '../storage/config_store.dart';
 import '../theme.dart';
+import '../update/update_flow.dart';
 
 /// Settings screen — three device pickers + paired URL + unpair action.
 ///
@@ -200,6 +201,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 32),
             _section('Sobre'),
             _kv('Versão', _appVersion ?? '...'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => UpdateFlow.runManualCheck(context),
+              icon: const Icon(Icons.system_update, color: AppColors.accent),
+              label: const Text('Verificar atualizações',
+                  style: TextStyle(color: AppColors.accent)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.border),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ],
         ),
       ),

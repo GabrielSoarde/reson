@@ -10,6 +10,7 @@ import '../pairing/pairing_screen.dart';
 import '../settings/settings_screen.dart';
 import '../storage/config_store.dart';
 import '../theme.dart';
+import '../update/update_flow.dart';
 import '../upload/upload_screen.dart';
 import 'board_drawer.dart';
 import 'bottom_controls.dart';
@@ -45,6 +46,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   bool _editing = false;
 
+  /// Guards the startup auto-update check so it fires at most once per app
+  /// session (the first time the main UI renders), not on every reconnect.
+  bool _updateChecked = false;
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
@@ -75,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _loading = false;
       });
       _connectWs();
+      _maybeCheckForUpdate();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -90,6 +96,19 @@ class _HomeScreenState extends State<HomeScreen> {
         _bannerError = 'Não conectado. Verifique se o PC está ligado e na mesma rede.';
       });
     }
+  }
+
+  /// Fire-and-forget GitHub Releases check, once per session, after the main
+  /// UI is up. A short delay lets the first frame settle before any dialog.
+  void _maybeCheckForUpdate() {
+    if (_updateChecked) return;
+    _updateChecked = true;
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      // checkAndPrompt swallows all errors and only shows UI if there's an
+      // update — safe to ignore the returned future.
+      unawaited(UpdateFlow.checkAndPrompt(context));
+    });
   }
 
   void _connectWs() {

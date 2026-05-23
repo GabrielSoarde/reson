@@ -5,13 +5,18 @@
          * VIBRATE — short haptics on play / drag-drop / stop.
          * READ_MEDIA_AUDIO — Android 13+ scoped storage replacement for
            READ_EXTERNAL_STORAGE; used by file_picker to read mp3s.
-         * READ_EXTERNAL_STORAGE — older devices (<=API 32) still need it. -->
+         * READ_EXTERNAL_STORAGE — older devices (<=API 32) still need it.
+         * REQUEST_INSTALL_PACKAGES — lets the in-app updater (ota_update)
+           launch the system package installer for a downloaded APK. On
+           Android 8+ the user grants "install unknown apps" for Reson the
+           first time. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
                      android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -41,6 +46,27 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- ota_update: FileProvider + result receiver used to download an APK
+             into app storage and hand it to the package installer. The
+             authority must match the plugin's default
+             "${applicationId}.ota_update_provider". -->
+        <provider
+            android:name="sk.fourq.otaupdate.OtaUpdateFileProvider"
+            android:authorities="${applicationId}.ota_update_provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
+        <receiver
+            android:name="sk.fourq.otaupdate.InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="${applicationId}.ACTION_INSTALL_COMPLETE" />
+            </intent-filter>
+        </receiver>
     </application>
     <queries>
         <intent>

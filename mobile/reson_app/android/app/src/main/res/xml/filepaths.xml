@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths for ota_update: the downloaded APK is written to
+     <internal files>/ota_update/ and shared with the package installer. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="internal_apk_storage" path="ota_update/" />
+</paths>
