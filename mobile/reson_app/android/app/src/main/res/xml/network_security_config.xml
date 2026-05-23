@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP policy.
+
+  The PC backend is Kestrel-on-the-LAN with no TLS — the security model is
+  "you're on the same Wi-Fi as the host, so traffic is already on a trusted
+  segment". Android's domain-config syntax doesn't support CIDR ranges
+  (it only matches by literal hostname or registrable suffix), and the user's
+  LAN IP is arbitrary (could be 10.0.0.x, 172.16.x.x, 192.168.x.x, etc.) —
+  so we permit cleartext globally and rely on the user only pointing the
+  client at their own PC.
+
+  If you want to harden this in v2, ship a setup that pins to the QR'd IP
+  at first launch (write <domain> entries dynamically isn't supported, but
+  you can ship a runtime HTTPS client that only allows the paired host).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
