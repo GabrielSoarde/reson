@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
-using QRCoder;
+using Soundpad.Wpf;
 
 namespace Soundpad.Tray;
 
@@ -13,10 +13,10 @@ public class QrWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         TrySetFormIcon();
 
-        using var g = new QRCodeGenerator();
-        using var data = g.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
-        using var qr = new PngByteQRCode(data);
-        var bytes = qr.GetGraphic(20);
+        // PNG generation lives in QrRenderer (shared with the WPF sidebar).
+        // We hand the bytes to System.Drawing.Image via a MemoryStream — same
+        // payload, different image type than the BitmapImage path used by WPF.
+        var bytes = QrRenderer.RenderPng(url);
         using var ms = new MemoryStream(bytes);
         var img = Image.FromStream(ms);
 

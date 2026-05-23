@@ -33,6 +33,14 @@
       <button id="settings" class="icon" title="Settings">⚙</button>
     </div>
   </footer>
+  <!--
+    Floating "+" upload trigger. Hidden file input is the real picker — the
+    visible FAB just forwards click → input.click(). accept=.mp3,.wav,.ogg,.flac
+    matches SoundLibrary.AllowedExtensions so the backend doesn't even see
+    obviously-wrong files (the server still validates as a defense layer).
+  -->
+  <button id="upload-fab" class="upload-fab" aria-label="Adicionar som" title="Adicionar som">+</button>
+  <input id="upload-input" type="file" accept=".mp3,.wav,.ogg,.flac" multiple hidden />
   <script src="/app.js"></script>
 </body>
 </html>

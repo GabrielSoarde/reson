@@ -392,6 +392,74 @@
     volTimer = setTimeout(() => api('/api/volume', { method: 'POST', body: JSON.stringify({ value: parseInt(e.target.value, 10) }) }), 100);
   });
 
+  // ---------- Upload FAB ----------
+  // The FAB forwards click → hidden <input type="file">. Selected files are
+  // uploaded sequentially (not parallel) — keeps memory pressure low on
+  // older phones and makes the progress text honest.
+  const uploadFab = document.getElementById('upload-fab');
+  const uploadInput = document.getElementById('upload-input');
+  if (uploadFab && uploadInput) {
+    uploadFab.addEventListener('click', () => { if (!uploadFab.disabled) uploadInput.click(); });
+    uploadInput.addEventListener('change', async () => {
+      const files = Array.from(uploadInput.files || []);
+      // Reset the input value so picking the *same* file twice in a row still
+      // fires `change` the second time (browsers dedupe identical values).
+      uploadInput.value = '';
+      if (files.length === 0) return;
+
+      uploadFab.disabled = true;
+      uploadFab.classList.add('uploading');
+      const restoreFab = () => {
+        uploadFab.disabled = false;
+        uploadFab.classList.remove('uploading');
+        uploadFab.textContent = '+';
+      };
+
+      let ok = 0;
+      let failed = 0;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        uploadFab.textContent = files.length > 1 ? `${i + 1}/${files.length}` : '…';
+        try {
+          // Multipart upload. Don't set Content-Type ourselves — the browser
+          // computes the multipart boundary. We deliberately strip our default
+          // 'Content-Type: application/json' from headers() by overriding it
+          // with the FormData boundary (which fetch sets when body is FormData
+          // *and* no explicit Content-Type is provided).
+          const fd = new FormData();
+          fd.append('file', f, f.name);
+          const r = await fetch('/api/sounds/upload', {
+            method: 'POST',
+            headers: { 'X-Auth-Token': tok, 'X-Origin-Id': originId },
+            body: fd,
+          });
+          if (r.ok) {
+            ok++;
+          } else {
+            failed++;
+            let msg = `Falha ao enviar ${f.name}`;
+            try {
+              const j = await r.json();
+              if (j && j.error) msg = `${f.name}: ${j.error}`;
+            } catch {}
+            toast(msg);
+          }
+        } catch (e) {
+          failed++;
+          toast(`Erro de rede ao enviar ${f.name}`);
+        }
+      }
+      restoreFab();
+      if (ok > 0 && failed === 0) {
+        toast(ok === 1 ? 'Som adicionado' : `${ok} sons adicionados`);
+      } else if (ok > 0 && failed > 0) {
+        toast(`${ok} ok, ${failed} falharam`);
+      }
+      // The grid refresh happens automatically via the libraryChanged WS
+      // broadcast that /api/sounds/upload emits on success.
+    });
+  }
+
   // Cancel drag on orientation change — layout reflows and absolute pointer coords
   // no longer map to the source cell.
   window.addEventListener('orientationchange', () => { if (drag.state !== 'idle') endDrag(); });

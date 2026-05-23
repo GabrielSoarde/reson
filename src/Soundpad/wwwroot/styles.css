@@ -120,3 +120,41 @@ footer {
 .icon { background: transparent; border: 0; color: #ccc; font-size: 1.4rem; cursor: pointer; }
 .orphans { margin-top: 24px; padding: 12px; border: 1px solid #333; border-radius: 8px; }
 .orphans h2 { font-size: 0.85rem; margin: 0 0 8px; color: #888; letter-spacing: 0.1em; text-transform: uppercase; }
+/* Floating "+" upload trigger. Sits above the safe-area inset on iOS so it
+   stays above the home indicator. Positioned bottom-right at fixed offset
+   from the footer; raises further when the footer's stop button is wider. */
+.upload-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(120px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 0;
+  background: #16a34a;
+  color: #fff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.4);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 900;
+  transition: transform 0.1s, background 0.1s, box-shadow 0.1s;
+}
+.upload-fab:hover { background: #15803d; }
+.upload-fab:active { transform: scale(0.92); box-shadow: 0 3px 8px rgba(0,0,0,0.55); }
+.upload-fab[disabled] { background: #4b5563; cursor: progress; }
+/* Spinner glyph shown when an upload is in flight. The text content swaps
+   to a small numeric "N/M" indicator from app.js when multi-file uploading. */
+.upload-fab.uploading { animation: upload-spin 1.4s linear infinite; }
+@keyframes upload-spin {
+  0% { box-shadow: 0 6px 16px rgba(0,0,0,0.55), 0 0 0 0 rgba(34,197,94,0.4); }
+  50% { box-shadow: 0 6px 16px rgba(0,0,0,0.55), 0 0 0 8px rgba(34,197,94,0); }
+  100% { box-shadow: 0 6px 16px rgba(0,0,0,0.55), 0 0 0 0 rgba(34,197,94,0); }
+}
+@media (max-width: 600px) {
+  .upload-fab { bottom: calc(132px + env(safe-area-inset-bottom)); right: 12px; }
+}

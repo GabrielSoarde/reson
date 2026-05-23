@@ -281,6 +281,7 @@ app.Map("/ws", async ctx =>
 });
 Soundpad.Api.PlaybackEndpoints.Map(app);
 Soundpad.Api.SoundEndpoints.Map(app);
+Soundpad.Api.AuthEndpoints.Map(app);
 
 // Spin up the WPF native window + tray on its own STA thread. The WPF
 // Application owns the tray icon; Kestrel keeps blocking on the main thread.
@@ -290,7 +291,7 @@ WpfHost? wpf = null;
 if (!isTesting && adapter is not null)
 {
     var locator = app.Services.GetRequiredService<DeviceLocator>();
-    wpf = new WpfHost(library, engine, locator, adapter, boundPort);
+    wpf = new WpfHost(library, engine, locator, adapter, boundPort, Path.Combine(rootDir, "sounds"));
     wpf.Start();
 }
 

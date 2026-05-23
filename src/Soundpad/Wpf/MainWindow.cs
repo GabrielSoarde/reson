@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using Soundpad.Audio;
 using Soundpad.Models;
+using Soundpad.Network;
 using Soundpad.Sound;
 // Disambiguate vs. System.Windows.Forms (UseWindowsForms=true is on for the tray)
 // and System.Drawing / System.IO which the SDK pulls in globally.
@@ -20,6 +21,7 @@ using ColorConverter = System.Windows.Media.ColorConverter;
 using Cursors = System.Windows.Input.Cursors;
 using FontFamily = System.Windows.Media.FontFamily;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Image = System.Windows.Controls.Image;
 using Orientation = System.Windows.Controls.Orientation;
 using Path = System.IO.Path;
 using VerticalAlignment = System.Windows.VerticalAlignment;
@@ -38,7 +40,9 @@ public sealed class MainWindow : Window
     private readonly SoundLibrary _library;
     private readonly PlaybackEngine _engine;
     private readonly DeviceLocator _locator;
+    private readonly NetworkAdapter _adapter;
     private readonly int _port;
+    private readonly string _soundsDir;
     private readonly Action<string> _onPlaying;
     private readonly Action _onStopped;
     private readonly Action<int> _onVolumeChanged;
@@ -50,6 +54,14 @@ public sealed class MainWindow : Window
     private static readonly Color StopColor = (Color)ColorConverter.ConvertFromString("#dc2626");
     private static readonly Color StopHoverColor = (Color)ColorConverter.ConvertFromString("#ef4444");
     private static readonly Color MutedTextColor = (Color)ColorConverter.ConvertFromString("#cbd5e1");
+    private static readonly Color AccentColor = (Color)ColorConverter.ConvertFromString("#22c55e");
+    private static readonly Color AccentHoverColor = (Color)ColorConverter.ConvertFromString("#16a34a");
+    private static readonly Color NeutralColor = (Color)ColorConverter.ConvertFromString("#374151");
+    private static readonly Color NeutralHoverColor = (Color)ColorConverter.ConvertFromString("#4b5563");
+
+    // QR sidebar widths. Expanded ~= QR + padding; collapsed = a thin re-open strip.
+    private const double SidebarExpandedWidth = 280;
+    private const double SidebarCollapsedWidth = 36;
 
     private Grid _gridHost = null!;
     private Slider _volumeSlider = null!;
@@ -59,19 +71,34 @@ public sealed class MainWindow : Window
     // Map sound id → its visual root (Border) so we can flip the "playing" style fast.
     private readonly Dictionary<string, SoundTile> _tilesById = new();
     private bool _suppressEngineEcho;  // ignore the next VolumeChanged when we caused it
+    // Track the token we last rendered so we don't re-render the QR on every
+    // libraryChanged (most of which are sound add/remove, not token rotation).
+    private string? _lastRenderedToken;
 
-    public MainWindow(SoundLibrary library, PlaybackEngine engine, DeviceLocator locator, int port)
+    // Sidebar pieces — kept as fields because they need updating from event handlers
+    // (token-regenerate refreshes the QR; collapse swaps content visibility).
+    private ColumnDefinition _sidebarCol = null!;
+    private Border _sidebar = null!;
+    private StackPanel _sidebarContent = null!;
+    private StackPanel _sidebarCollapsed = null!;
+    private Image _qrImage = null!;
+    private TextBlock _urlText = null!;
+    private bool _sidebarCollapsedState;
+
+    public MainWindow(SoundLibrary library, PlaybackEngine engine, DeviceLocator locator, NetworkAdapter adapter, int port, string soundsDir)
     {
         _library = library;
         _engine = engine;
         _locator = locator;
+        _adapter = adapter;
         _port = port;
+        _soundsDir = soundsDir;
 
         Title = "Reson";
-        Width = 900;
-        Height = 650;
-        MinWidth = 480;
-        MinHeight = 360;
+        Width = 1180;
+        Height = 680;
+        MinWidth = 720;
+        MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(BgColor);
         FontFamily = new FontFamily("Segoe UI");
@@ -81,12 +108,20 @@ public sealed class MainWindow : Window
 
         BuildLayout();
         RebuildGrid();
+        RefreshSidebar();
 
         _onPlaying = id => Dispatcher.BeginInvoke(new Action(() => OnPlayingUi(id)));
         _onStopped = () => Dispatcher.BeginInvoke(new Action(OnStoppedUi));
         _onVolumeChanged = v => Dispatcher.BeginInvoke(new Action(() => OnVolumeChangedUi(v)));
         _onMonitorChanged = b => Dispatcher.BeginInvoke(new Action(() => OnMonitorChangedUi(b)));
-        _onLibraryChanged = () => Dispatcher.BeginInvoke(new Action(RebuildGrid));
+        _onLibraryChanged = () => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            RebuildGrid();
+            // Library mutations include token rotation (POST /api/auth/regenerate
+            // persists via Save() which raises Changed). RefreshSidebar diffs
+            // against _lastRenderedToken so it's cheap on the common case.
+            RefreshSidebar();
+        }));
 
         _engine.Playing += _onPlaying;
         _engine.Stopped += _onStopped;
@@ -182,12 +217,50 @@ public sealed class MainWindow : Window
 
     private void BuildLayout()
     {
+        // Top-level: 2 columns (main pane | QR sidebar). The sidebar's width
+        // is animatable via _sidebarCol so we don't reflow the rest of the UI
+        // when the user collapses/expands.
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // header
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });  // grid
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // bottom bar
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _sidebarCol = new ColumnDefinition { Width = new GridLength(SidebarExpandedWidth) };
+        root.ColumnDefinitions.Add(_sidebarCol);
 
-        // Header (title strip)
+        // Left column: header / grid / bottom bar (the original 3-row layout).
+        var leftPane = new Grid();
+        leftPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // header
+        leftPane.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });  // grid
+        leftPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // bottom bar
+
+        var header = BuildHeader();
+        Grid.SetRow(header, 0);
+        leftPane.Children.Add(header);
+
+        // Grid host (sound buttons live here)
+        _gridHost = new Grid
+        {
+            Margin = new Thickness(20, 20, 20, 12),
+        };
+        Grid.SetRow(_gridHost, 1);
+        leftPane.Children.Add(_gridHost);
+
+        var bottom = BuildBottomBar();
+        Grid.SetRow(bottom, 2);
+        leftPane.Children.Add(bottom);
+
+        Grid.SetColumn(leftPane, 0);
+        root.Children.Add(leftPane);
+
+        // Right column: QR sidebar (built lazily into a Border so we can swap
+        // expanded ↔ collapsed content without reflowing the main grid).
+        _sidebar = BuildSidebar();
+        Grid.SetColumn(_sidebar, 1);
+        root.Children.Add(_sidebar);
+
+        Content = root;
+    }
+
+    private Border BuildHeader()
+    {
         var header = new Border
         {
             Background = new SolidColorBrush(PanelColor),
@@ -212,23 +285,259 @@ public sealed class MainWindow : Window
         headerStack.Children.Add(dot);
         headerStack.Children.Add(titleText);
         header.Child = headerStack;
-        Grid.SetRow(header, 0);
-        root.Children.Add(header);
+        return header;
+    }
 
-        // Grid host (sound buttons live here)
-        _gridHost = new Grid
+    /// <summary>
+    /// Build the right-side QR sidebar. The sidebar has two visual states —
+    /// expanded (QR + URL + actions) and collapsed (a thin strip with an
+    /// "expand" arrow). Both states share the same Border host; we just swap
+    /// the Child Grid and animate the column width.
+    /// </summary>
+    private Border BuildSidebar()
+    {
+        var border = new Border
         {
-            Margin = new Thickness(20, 20, 20, 12),
+            Background = new SolidColorBrush(PanelColor),
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0b1220")),
         };
-        Grid.SetRow(_gridHost, 1);
-        root.Children.Add(_gridHost);
 
-        // Bottom controls bar
-        var bottom = BuildBottomBar();
-        Grid.SetRow(bottom, 2);
-        root.Children.Add(bottom);
+        // Expanded content
+        _sidebarContent = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Margin = new Thickness(16, 16, 16, 16),
+        };
 
-        Content = root;
+        var headerRow = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 12) };
+        var headerTitle = new TextBlock
+        {
+            Text = "Conectar celular",
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        DockPanel.SetDock(headerTitle, Dock.Left);
+        var collapseBtn = BuildFlatButton("Esconder", NeutralColor, NeutralHoverColor, width: 88, height: 28, fontSize: 11);
+        collapseBtn.Click += (_, _) => CollapseSidebar();
+        DockPanel.SetDock(collapseBtn, Dock.Right);
+        headerRow.Children.Add(headerTitle);
+        headerRow.Children.Add(collapseBtn);
+        _sidebarContent.Children.Add(headerRow);
+
+        // QR image — DecodePixelWidth in QrRenderer keeps memory bounded.
+        var qrFrame = new Border
+        {
+            Background = Brushes.White,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _qrImage = new Image
+        {
+            Width = 220,
+            Height = 220,
+            Stretch = Stretch.Uniform,
+            // Pixelated source: nearest-neighbor keeps the QR modules crisp
+            // at any DPI (default WPF bilinear blurs the black squares).
+            SnapsToDevicePixels = true,
+        };
+        RenderOptions.SetBitmapScalingMode(_qrImage, BitmapScalingMode.NearestNeighbor);
+        qrFrame.Child = _qrImage;
+        _sidebarContent.Children.Add(qrFrame);
+
+        // URL text under the QR (selectable feels nice but a plain TextBlock
+        // wraps fine and the "Copiar URL" button covers the copy use case).
+        _urlText = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = new SolidColorBrush(MutedTextColor),
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+        _sidebarContent.Children.Add(_urlText);
+
+        // Action buttons stacked below the URL.
+        var copyBtn = BuildFlatButton("Copiar URL", AccentColor, AccentHoverColor, width: double.NaN, height: 32, fontSize: 12);
+        copyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+        copyBtn.Margin = new Thickness(0, 12, 0, 0);
+        copyBtn.Click += (_, _) => CopyUrlToClipboard();
+        _sidebarContent.Children.Add(copyBtn);
+
+        var regenBtn = BuildFlatButton("Regenerar token", NeutralColor, NeutralHoverColor, width: double.NaN, height: 32, fontSize: 12);
+        regenBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+        regenBtn.Margin = new Thickness(0, 8, 0, 0);
+        regenBtn.Click += (_, _) => RegenerateToken();
+        _sidebarContent.Children.Add(regenBtn);
+
+        var hint = new TextBlock
+        {
+            Text = "Escaneie o QR com o celular na mesma rede Wi-Fi.\n\nRegenerar o token desconecta todos os celulares — eles precisam escanear de novo.",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(MutedTextColor),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 14, 0, 0),
+            Opacity = 0.75,
+        };
+        _sidebarContent.Children.Add(hint);
+
+        // Collapsed state: just a vertical text "→" expand button. The grip
+        // takes the full sidebar width so the user has a wide click target.
+        _sidebarCollapsed = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 18, 0, 0),
+        };
+        var expandBtn = new Button
+        {
+            Content = "‹\nQ\nR",
+            Foreground = Brushes.White,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 11,
+            Width = 28,
+            Height = 80,
+            Cursor = Cursors.Hand,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(NeutralColor),
+            ToolTip = "Mostrar QR",
+        };
+        expandBtn.Template = BuildFlatButtonTemplate(NeutralColor, NeutralHoverColor, cornerRadius: 6);
+        expandBtn.Click += (_, _) => ExpandSidebar();
+        _sidebarCollapsed.Children.Add(expandBtn);
+        _sidebarCollapsed.Visibility = Visibility.Collapsed;
+
+        var hostStack = new Grid();
+        hostStack.Children.Add(_sidebarContent);
+        hostStack.Children.Add(_sidebarCollapsed);
+        border.Child = hostStack;
+
+        return border;
+    }
+
+    /// <summary>
+    /// Toggle the sidebar to the collapsed state — narrow strip with an
+    /// expand glyph. We don't animate the column width because GridLength
+    /// is non-animatable; the snap is fine for this UI and keeps the code
+    /// simple.
+    /// </summary>
+    private void CollapseSidebar()
+    {
+        _sidebarCollapsedState = true;
+        _sidebarContent.Visibility = Visibility.Collapsed;
+        _sidebarCollapsed.Visibility = Visibility.Visible;
+        _sidebarCol.Width = new GridLength(SidebarCollapsedWidth);
+    }
+
+    private void ExpandSidebar()
+    {
+        _sidebarCollapsedState = false;
+        _sidebarContent.Visibility = Visibility.Visible;
+        _sidebarCollapsed.Visibility = Visibility.Collapsed;
+        _sidebarCol.Width = new GridLength(SidebarExpandedWidth);
+        // Re-render in case token rotated while collapsed.
+        RefreshSidebar();
+    }
+
+    /// <summary>
+    /// Build the URL the phone uses to connect. Mirrors the format used by
+    /// <see cref="WpfTrayIcon"/> and the bootstrap log line in Program.cs.
+    /// </summary>
+    private string BuildConnectUrl()
+    {
+        var ip = _adapter.IPv4.FirstOrDefault()?.ToString() ?? "127.0.0.1";
+        return $"http://{ip}:{_port}/?t={_library.Config.AuthToken}";
+    }
+
+    /// <summary>
+    /// Refresh the QR + URL text. Cheap on the no-token-change path: short-
+    /// circuits via <see cref="_lastRenderedToken"/> so library mutations
+    /// (sound add/remove) don't redo the bitmap encode.
+    /// </summary>
+    private void RefreshSidebar()
+    {
+        if (_sidebarCollapsedState) return; // nothing visible to refresh
+        var token = _library.Config.AuthToken;
+        if (token == _lastRenderedToken && _qrImage.Source is not null) return;
+        var url = BuildConnectUrl();
+        try
+        {
+            _qrImage.Source = QrRenderer.RenderBitmap(url);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"MainWindow.RefreshSidebar render: {ex.Message}");
+        }
+        _urlText.Text = url;
+        _lastRenderedToken = token;
+    }
+
+    private void CopyUrlToClipboard()
+    {
+        var url = BuildConnectUrl();
+        try
+        {
+            System.Windows.Clipboard.SetText(url);
+        }
+        catch (Exception ex)
+        {
+            // Clipboard can throw COM ExternalException on transient locks.
+            // Surface to the user so they know to retry rather than silently
+            // pretending it worked.
+            System.Windows.MessageBox.Show(
+                $"Não foi possível copiar a URL:\n{ex.Message}",
+                "Reson",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Rotate the auth token directly via the library (no HTTP round-trip —
+    /// we're in the same process). Identical persistence path to the
+    /// /api/auth/regenerate endpoint, so the behavior matches what a phone
+    /// hitting that endpoint would see. After Save() the library raises
+    /// Changed → _onLibraryChanged → RefreshSidebar re-renders the QR with
+    /// the new token.
+    /// </summary>
+    private void RegenerateToken()
+    {
+        var confirm = System.Windows.MessageBox.Show(
+            "Isto vai desconectar todos os celulares que já fizeram pareamento. " +
+            "Eles vão precisar escanear o QR novamente.\n\nDeseja continuar?",
+            "Reson — regenerar token",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (confirm != System.Windows.MessageBoxResult.Yes) return;
+
+        try
+        {
+            var newToken = GenerateToken();
+            _library.MutateConfig(c => c with { AuthToken = newToken });
+            _library.Save(); // raises Changed → RefreshSidebar via _onLibraryChanged
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"Falha ao regenerar token:\n{ex.Message}",
+                "Reson",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    private static string GenerateToken()
+    {
+        // Match SoundConfig.GenerateToken and AuthEndpoints.GenerateToken —
+        // 16-byte hex, lowercased. Kept duplicated here (rather than centralized)
+        // so the WPF assembly doesn't need to reference an HTTP-flavored helper.
+        var bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private FrameworkElement BuildBottomBar()
@@ -242,6 +551,7 @@ public sealed class MainWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // STOP
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Volume
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // Monitor
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // Add sound
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // Settings
 
         // STOP button (left)
@@ -310,9 +620,16 @@ public sealed class MainWindow : Window
         Grid.SetColumn(_monitorCheck, 2);
         grid.Children.Add(_monitorCheck);
 
+        // "+ Adicionar som" button — opens an OpenFileDialog and copies the
+        // picked files into _soundsDir. FileSystemWatcher → AutoScan picks
+        // them up and raises library.Changed which rebuilds the grid.
+        var addBtn = BuildAddSoundButton();
+        Grid.SetColumn(addBtn, 3);
+        grid.Children.Add(addBtn);
+
         // Settings button (gear) — opens the device picker modal.
         var settingsBtn = BuildSettingsButton();
-        Grid.SetColumn(settingsBtn, 3);
+        Grid.SetColumn(settingsBtn, 4);
         grid.Children.Add(settingsBtn);
 
         bar.Child = grid;
@@ -321,27 +638,92 @@ public sealed class MainWindow : Window
 
     private Button BuildSettingsButton()
     {
-        // Plain "Configurações" text button — gear glyph (⚙) renders unevenly
-        // across Segoe UI variants, so use text to stay readable on every box.
-        var rest = (Color)ColorConverter.ConvertFromString("#374151");
-        var hover = (Color)ColorConverter.ConvertFromString("#4b5563");
-        var btn = new Button
-        {
-            Content = "⚙ Configurações",
-            Foreground = Brushes.White,
-            FontWeight = FontWeights.SemiBold,
-            FontSize = 13,
-            Width = 150,
-            Height = 36,
-            Cursor = Cursors.Hand,
-            BorderThickness = new Thickness(0),
-            Background = new SolidColorBrush(rest),
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 0, 0),
-        };
-        btn.Template = BuildFlatButtonTemplate(rest, hover);
+        var btn = BuildFlatButton("⚙ Configurações", NeutralColor, NeutralHoverColor, width: 150, height: 36, fontSize: 13);
+        btn.Margin = new Thickness(8, 0, 0, 0);
         btn.Click += (_, _) => OpenSettingsDialog();
         return btn;
+    }
+
+    private Button BuildAddSoundButton()
+    {
+        var btn = BuildFlatButton("+ Adicionar som", AccentColor, AccentHoverColor, width: 150, height: 36, fontSize: 13);
+        btn.Margin = new Thickness(16, 0, 0, 0);
+        btn.Click += (_, _) => AddSoundsFromDialog();
+        return btn;
+    }
+
+    /// <summary>
+    /// Open a multi-select OpenFileDialog and copy each picked file directly
+    /// into the user's sounds directory. We deliberately do NOT go through
+    /// the /api/sounds/upload HTTP endpoint — we're in the same process, and
+    /// File.Copy + FileSystemWatcher → AutoScan handles dedupe (existing file
+    /// names skip via OverwriteExisting=false) and grid placement on the same
+    /// code path as a manual drop into the folder.
+    ///
+    /// Failures are aggregated and surfaced as a single MessageBox so a
+    /// partial-success batch doesn't spam dialogs.
+    /// </summary>
+    private void AddSoundsFromDialog()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Adicionar sons",
+            Multiselect = true,
+            Filter = "Audio (*.mp3;*.wav;*.ogg;*.flac)|*.mp3;*.wav;*.ogg;*.flac|Todos os arquivos (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        if (dlg.FileNames.Length == 0) return;
+
+        try { Directory.CreateDirectory(_soundsDir); } catch { /* AutoScan will skip if missing */ }
+
+        var failed = new List<string>();
+        var copied = 0;
+        foreach (var src in dlg.FileNames)
+        {
+            try
+            {
+                var name = Path.GetFileName(src);
+                var dst = Path.Combine(_soundsDir, name);
+                // Don't clobber an existing file silently — generate a
+                // " (N)" variant the same way SoundLibrary.CreateExclusive
+                // does for HTTP uploads. Caps the suffix to avoid infinite
+                // loops if someone has hundreds of name collisions.
+                if (File.Exists(dst))
+                {
+                    var stem = Path.GetFileNameWithoutExtension(name);
+                    var ext = Path.GetExtension(name);
+                    var picked = false;
+                    for (int i = 2; i <= 100; i++)
+                    {
+                        var candidate = Path.Combine(_soundsDir, $"{stem} ({i}){ext}");
+                        if (!File.Exists(candidate)) { dst = candidate; picked = true; break; }
+                    }
+                    if (!picked) { failed.Add($"{name} (muitas colisões de nome)"); continue; }
+                }
+                File.Copy(src, dst, overwrite: false);
+                copied++;
+            }
+            catch (Exception ex)
+            {
+                failed.Add($"{Path.GetFileName(src)}: {ex.Message}");
+            }
+        }
+
+        // Belt-and-suspenders: the FileSystemWatcher in Program.cs runs
+        // AutoScan on its own, but its debounce can take a beat. Kick a
+        // manual AutoScan so the new sounds show up the moment the dialog
+        // closes. Idempotent — AutoScan checks `known` before adding.
+        try { _library.AutoScan(); } catch (Exception ex) { Console.Error.WriteLine($"AutoScan after add: {ex.Message}"); }
+
+        if (failed.Count > 0)
+        {
+            System.Windows.MessageBox.Show(
+                $"Copiados {copied} de {dlg.FileNames.Length} arquivos. Falhas:\n\n• " + string.Join("\n• ", failed),
+                "Reson — adicionar sons",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
     }
 
     private void OpenSettingsDialog()
@@ -381,14 +763,38 @@ public sealed class MainWindow : Window
         return btn;
     }
 
-    private static ControlTemplate BuildFlatButtonTemplate(Color rest, Color hover)
+    /// <summary>
+    /// Shared button factory for the various flat-styled buttons on this
+    /// window. Pass <c>double.NaN</c> for <paramref name="width"/> to let
+    /// the button size to its container (e.g. sidebar full-width buttons).
+    /// </summary>
+    private static Button BuildFlatButton(string label, Color rest, Color hover, double width, double height, double fontSize)
+    {
+        var btn = new Button
+        {
+            Content = label,
+            Foreground = Brushes.White,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = fontSize,
+            Height = height,
+            Cursor = Cursors.Hand,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(rest),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        if (!double.IsNaN(width)) btn.Width = width;
+        btn.Template = BuildFlatButtonTemplate(rest, hover);
+        return btn;
+    }
+
+    private static ControlTemplate BuildFlatButtonTemplate(Color rest, Color hover, double cornerRadius = 10)
     {
         // We can't pass colors into a ControlTemplate easily without static
         // resources, so build the template per-instance with literal brushes
         // via a FrameworkElementFactory.
         var border = new FrameworkElementFactory(typeof(Border));
         border.Name = "Bg";
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(cornerRadius));
         border.SetValue(Border.BackgroundProperty, new SolidColorBrush(rest));
         var content = new FrameworkElementFactory(typeof(ContentPresenter));
         content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
@@ -422,12 +828,13 @@ public sealed class MainWindow : Window
         for (int r = 0; r < rows; r++)
             _gridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var soundsDir = Path.Combine(AppContext.BaseDirectory, "sounds");
+        // Sounds live in the same %LOCALAPPDATA%\Reson\sounds\ folder the
+        // upload pipeline writes to — passed down from Program.cs via WpfHost.
         foreach (var sound in config.Sounds.Where(s => s.Position is not null))
         {
             // Skip cells that fell off after a grid shrink.
             if (sound.Position!.Col >= cols || sound.Position.Row >= rows) continue;
-            var tile = BuildSoundTile(sound, soundsDir);
+            var tile = BuildSoundTile(sound, _soundsDir);
             Grid.SetColumn(tile.Root, sound.Position.Col);
             Grid.SetRow(tile.Root, sound.Position.Row);
             _gridHost.Children.Add(tile.Root);
