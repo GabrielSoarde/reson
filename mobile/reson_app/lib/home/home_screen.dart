@@ -11,7 +11,9 @@ import '../settings/settings_screen.dart';
 import '../storage/config_store.dart';
 import '../theme.dart';
 import '../upload/upload_screen.dart';
+import 'board_drawer.dart';
 import 'bottom_controls.dart';
+import 'sound_editor_sheet.dart';
 import 'sound_grid.dart';
 
 /// Main app screen: header (wordmark + connection dot + settings) +
@@ -41,6 +43,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _wsConnected = false;
   String? _bannerError;
   bool _loading = true;
+  bool _editing = false;
+
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -125,8 +130,11 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'gameDeviceChanged':
       case 'monitorDeviceChanged':
       case 'micDeviceChanged':
-        // Full re-fetch — the broadcast carries no diff payload and these
-        // changes can ripple into the device-name fields in StateDto.
+      case 'activeBoardChanged':
+      case 'boardsChanged':
+        // Full re-fetch — the broadcast carries no (usable) diff payload and
+        // these changes can ripple into device-name fields, the board list, or
+        // the visible sound set (boards scope which sounds /api/state returns).
         _refreshState();
         break;
     }
@@ -160,6 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
         sounds: s.sounds,
         nowPlaying: s.nowPlaying,
         authRequired: s.authRequired,
+        boards: s.boards,
+        activeBoardId: s.activeBoardId,
       );
 
   StateDto _patchMonitor(StateDto s, bool enabled) => StateDto(
@@ -177,6 +187,27 @@ class _HomeScreenState extends State<HomeScreen> {
         sounds: s.sounds,
         nowPlaying: s.nowPlaying,
         authRequired: s.authRequired,
+        boards: s.boards,
+        activeBoardId: s.activeBoardId,
+      );
+
+  StateDto _patchSounds(StateDto s, List<SoundEntryDto> sounds) => StateDto(
+        audioDevice: s.audioDevice,
+        audioDeviceName: s.audioDeviceName,
+        monitorDevice: s.monitorDevice,
+        monitorDeviceName: s.monitorDeviceName,
+        monitorEnabled: s.monitorEnabled,
+        micDevice: s.micDevice,
+        micDeviceName: s.micDeviceName,
+        availableOutputDevices: s.availableOutputDevices,
+        availableInputDevices: s.availableInputDevices,
+        volume: s.volume,
+        grid: s.grid,
+        sounds: sounds,
+        nowPlaying: s.nowPlaying,
+        authRequired: s.authRequired,
+        boards: s.boards,
+        activeBoardId: s.activeBoardId,
       );
 
   // --- user actions ---------------------------------------------------------
@@ -223,6 +254,250 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- boards ---------------------------------------------------------------
+
+  Future<void> _activateBoard(BoardDto b) async {
+    if (b.id == _state?.activeBoardId) return;
+    try {
+      await _api.activateBoard(b.id);
+      // WS activeBoardChanged will trigger a refetch, but refetch eagerly too
+      // so the switch feels instant even if the socket is momentarily down.
+      await _refreshState();
+    } catch (_) {
+      _toast('Falha ao trocar de board');
+    }
+  }
+
+  Future<void> _createBoard() async {
+    final result = await _showBoardDialog(title: 'Novo board');
+    if (result == null) return;
+    try {
+      await _api.createBoard(result.name, result.color);
+      await _refreshState();
+    } catch (_) {
+      _toast('Falha ao criar board');
+    }
+  }
+
+  Future<void> _renameBoard(BoardDto b) async {
+    final controller = TextEditingController(text: b.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Renomear board'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'Nome'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == b.name) return;
+    try {
+      await _api.renameBoard(b.id, name: name);
+      await _refreshState();
+    } catch (_) {
+      _toast('Falha ao renomear');
+    }
+  }
+
+  Future<void> _recolorBoard(BoardDto b) async {
+    final color = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        var selected = b.color;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text('Mudar cor'),
+            content: PaletteGrid(
+              selected: selected,
+              onPick: (c) => setLocal(() => selected = c),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(selected),
+                child: const Text('Salvar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (color == null || color == b.color) return;
+    try {
+      await _api.renameBoard(b.id, color: color);
+      await _refreshState();
+    } catch (_) {
+      _toast('Falha ao mudar cor');
+    }
+  }
+
+  Future<void> _deleteBoard(BoardDto b) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Apagar board?'),
+        content: Text('"${b.name}" e todos os sons nele serão removidos.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Apagar', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _api.deleteBoard(b.id);
+      await _refreshState();
+    } on ApiException catch (e) {
+      _toast(e.statusCode == 400
+          ? 'Não é possível apagar o último board'
+          : 'Falha ao apagar board');
+    } catch (_) {
+      _toast('Falha ao apagar board');
+    }
+  }
+
+  /// Shared name+color dialog for board creation. Returns null on cancel.
+  Future<({String name, String color})?> _showBoardDialog({
+    required String title,
+  }) async {
+    final controller = TextEditingController();
+    return showDialog<({String name, String color})>(
+      context: context,
+      builder: (ctx) {
+        var selected = kBoardPalette[5]; // default #3b82f6 (accent)
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(hintText: 'Nome do board'),
+                ),
+                const SizedBox(height: 20),
+                PaletteGrid(
+                  selected: selected,
+                  onPick: (c) => setLocal(() => selected = c),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final name = controller.text.trim();
+                  if (name.isEmpty) return;
+                  Navigator.of(ctx).pop((name: name, color: selected));
+                },
+                child: const Text('Criar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- per-sound ------------------------------------------------------------
+
+  void _openSoundEditor(SoundEntryDto sound) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SoundEditorSheet(
+        sound: sound,
+        onVolumeChanged: (v) => _setSoundVolume(sound.id, v),
+        onDelete: () {
+          Navigator.of(ctx).pop();
+          _confirmDeleteSound(sound);
+        },
+      ),
+    );
+  }
+
+  Future<void> _setSoundVolume(String soundId, int value) async {
+    // Optimistic local patch so the badge/slider don't snap back. The backend
+    // broadcasts libraryChanged (not echo-filtered), so a refetch will follow
+    // and reconcile — but the optimistic update keeps the UI smooth meanwhile.
+    if (_state != null) {
+      final next = _state!.sounds
+          .map((s) => s.id == soundId ? s.copyWith(volume: value) : s)
+          .toList();
+      setState(() => _state = _patchSounds(_state!, next));
+    }
+    try {
+      await _api.setSoundVolume(soundId, value);
+    } catch (_) {
+      _toast('Falha ao mudar volume do som');
+    }
+  }
+
+  Future<void> _confirmDeleteSound(SoundEntryDto sound) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Apagar som?'),
+        content: Text('"${sound.label}" será removido permanentemente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Apagar', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _api.deleteSound(sound.id);
+      await _refreshState();
+    } catch (_) {
+      _toast('Falha ao apagar som');
+    }
+  }
+
   Future<void> _onLayoutChanged(List<LayoutPlacement> placements) async {
     // Optimistic local update: apply placements to our state, render, then
     // POST. On failure, refetch to recover the canonical layout.
@@ -235,22 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return s;
       }).toList();
       setState(() {
-        _state = StateDto(
-          audioDevice: _state!.audioDevice,
-          audioDeviceName: _state!.audioDeviceName,
-          monitorDevice: _state!.monitorDevice,
-          monitorDeviceName: _state!.monitorDeviceName,
-          monitorEnabled: _state!.monitorEnabled,
-          micDevice: _state!.micDevice,
-          micDeviceName: _state!.micDeviceName,
-          availableOutputDevices: _state!.availableOutputDevices,
-          availableInputDevices: _state!.availableInputDevices,
-          volume: _state!.volume,
-          grid: _state!.grid,
-          sounds: next,
-          nowPlaying: _state!.nowPlaying,
-          authRequired: _state!.authRequired,
-        );
+        _state = _patchSounds(_state!, next);
       });
     }
     try {
@@ -303,17 +563,64 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final boards = _state?.boards ?? const <BoardDto>[];
+    final activeBoard = _state?.activeBoard;
+    // App bar title is the active board's name; fall back to the wordmark when
+    // we have no boards yet (loading / not connected).
+    final titleText = activeBoard?.name ?? 'RESON';
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
+      drawer: BoardDrawer(
+        boards: boards,
+        activeBoardId: _state?.activeBoardId,
+        onActivate: (b) {
+          Navigator.of(context).pop(); // close drawer
+          _activateBoard(b);
+        },
+        onRename: _renameBoard,
+        onRecolor: _recolorBoard,
+        onDelete: _deleteBoard,
+        onCreate: () {
+          Navigator.of(context).pop(); // close drawer before dialog
+          _createBoard();
+        },
+      ),
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Boards',
+          icon: const Icon(Icons.menu),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
         title: Row(
           children: [
-            const Text('RESON', style: kWordmarkStyle),
+            Flexible(
+              child: Text(
+                titleText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: activeBoard == null
+                    ? kWordmarkStyle
+                    : const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
             const SizedBox(width: 10),
             _ConnectionDot(connected: _wsConnected),
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: _editing ? 'Sair da edição' : 'Editar sons',
+            onPressed: _state == null
+                ? null
+                : () => setState(() => _editing = !_editing),
+            icon: Icon(_editing ? Icons.check : Icons.edit,
+                color: _editing ? AppColors.accent : null),
+          ),
           IconButton(
             tooltip: 'Configurações',
             onPressed: _openSettings,
@@ -378,6 +685,8 @@ class _HomeScreenState extends State<HomeScreen> {
       nowPlaying: _nowPlaying,
       onPlay: _playSound,
       onLayoutChanged: _onLayoutChanged,
+      editing: _editing,
+      onEdit: _openSoundEditor,
     );
   }
 }

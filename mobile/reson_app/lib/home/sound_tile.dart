@@ -18,11 +18,16 @@ class SoundTile extends StatelessWidget {
     required this.sound,
     required this.playing,
     this.onTap,
+    this.editing = false,
   });
 
   final SoundEntryDto sound;
   final bool playing;
   final VoidCallback? onTap;
+
+  /// When true the tile is in edit mode — tapping opens the editor sheet rather
+  /// than playing. We surface a subtle pencil glyph as an affordance.
+  final bool editing;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +97,41 @@ class SoundTile extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                    ),
+                  ),
+                // Volume badge — only when gain != 100%, matching WPF.
+                if (sound.volume != 100)
+                  Positioned(
+                    left: 3,
+                    bottom: 3,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${sound.volume}%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                // Edit-mode affordance — small pencil in the top-right corner.
+                if (editing)
+                  Positioned(
+                    right: 3,
+                    top: 3,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(Icons.edit, color: Colors.white, size: 12),
                     ),
                   ),
               ],

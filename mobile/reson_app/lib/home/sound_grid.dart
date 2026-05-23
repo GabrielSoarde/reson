@@ -29,6 +29,8 @@ class SoundGrid extends StatelessWidget {
     required this.nowPlaying,
     required this.onPlay,
     required this.onLayoutChanged,
+    this.editing = false,
+    this.onEdit,
   });
 
   final int cols;
@@ -36,6 +38,13 @@ class SoundGrid extends StatelessWidget {
   final List<SoundEntryDto> sounds;
   final String? nowPlaying;
   final void Function(SoundEntryDto sound) onPlay;
+
+  /// When true, tapping a tile opens the editor sheet instead of playing.
+  /// Long-press still drags. The pencil affordance is rendered on each tile.
+  final bool editing;
+
+  /// Tap handler used while [editing]. Required when editing is true.
+  final void Function(SoundEntryDto sound)? onEdit;
 
   /// Called when a successful drop produced a new full layout.
   /// The list contains EVERY positioned sound after the move, exactly the
@@ -106,7 +115,10 @@ class SoundGrid extends StatelessWidget {
                     child: SoundTile(
                       sound: cell.sound!,
                       playing: cell.sound!.id == nowPlaying,
-                      onTap: () => onPlay(cell.sound!),
+                      editing: editing,
+                      onTap: () => editing
+                          ? onEdit?.call(cell.sound!)
+                          : onPlay(cell.sound!),
                     ),
                   );
                 },

@@ -140,6 +140,74 @@ class ApiClient {
     throw ApiException(streamed.statusCode, detail);
   }
 
+  // --- boards ----------------------------------------------------------------
+
+  /// Switch the active board. Backend broadcasts WS activeBoardChanged.
+  Future<void> activateBoard(String id) async {
+    final r = await _http
+        .post(_u('/api/boards/$id/activate'), headers: _jsonHeaders())
+        .timeout(_timeout);
+    _expect204(r);
+  }
+
+  /// Create a board. Backend broadcasts WS boardsChanged.
+  Future<void> createBoard(String name, String color) async {
+    final r = await _http
+        .post(_u('/api/boards'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'name': name, 'color': color}))
+        .timeout(_timeout);
+    // 201 Created or 200 are both acceptable success codes.
+    if (r.statusCode != 201 && r.statusCode != 200 && r.statusCode != 204) {
+      throw ApiException(r.statusCode, r.body);
+    }
+  }
+
+  /// Rename and/or recolor a board. Only sends the fields provided.
+  Future<void> renameBoard(String id, {String? name, String? color}) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (color != null) body['color'] = color;
+    final r = await _http
+        .put(_u('/api/boards/$id'),
+            headers: _jsonHeaders(), body: jsonEncode(body))
+        .timeout(_timeout);
+    if (r.statusCode != 204 && r.statusCode != 200) {
+      throw ApiException(r.statusCode, r.body);
+    }
+  }
+
+  /// Delete a board. Backend returns 400 if it's the last remaining board.
+  Future<void> deleteBoard(String id) async {
+    final r = await _http
+        .delete(_u('/api/boards/$id'), headers: _bareHeaders())
+        .timeout(_timeout);
+    if (r.statusCode != 204 && r.statusCode != 200) {
+      throw ApiException(r.statusCode, r.body);
+    }
+  }
+
+  // --- per-sound -------------------------------------------------------------
+
+  /// Set a single sound's gain (0-100). Note: POST, not PUT.
+  Future<void> setSoundVolume(String soundId, int value) async {
+    final r = await _http
+        .post(_u('/api/sounds/$soundId/volume'),
+            headers: _jsonHeaders(), body: jsonEncode({'value': value}))
+        .timeout(_timeout);
+    _expect204(r);
+  }
+
+  /// Delete a sound and its file from disk.
+  Future<void> deleteSound(String id) async {
+    final r = await _http
+        .delete(_u('/api/sounds/$id?deleteFile=true'), headers: _bareHeaders())
+        .timeout(_timeout);
+    if (r.statusCode != 204 && r.statusCode != 200 && r.statusCode != 404) {
+      throw ApiException(r.statusCode, r.body);
+    }
+  }
+
   void _expect204(http.Response r) {
     if (r.statusCode != 204) throw ApiException(r.statusCode, r.body);
   }

@@ -41,6 +41,7 @@ class SoundEntryDto {
   final bool missing;
   final int playCount;
   final DateTime? lastPlayedAt;
+  final int volume;
 
   const SoundEntryDto({
     required this.id,
@@ -52,6 +53,7 @@ class SoundEntryDto {
     required this.missing,
     required this.playCount,
     required this.lastPlayedAt,
+    required this.volume,
   });
 
   factory SoundEntryDto.fromJson(Map<String, dynamic> j) => SoundEntryDto(
@@ -68,9 +70,14 @@ class SoundEntryDto {
         lastPlayedAt: j['lastPlayedAt'] == null
             ? null
             : DateTime.tryParse(j['lastPlayedAt'] as String),
+        volume: (j['volume'] as num?)?.toInt() ?? 100,
       );
 
-  SoundEntryDto copyWith({GridPosition? position, bool clearPosition = false}) {
+  SoundEntryDto copyWith({
+    GridPosition? position,
+    bool clearPosition = false,
+    int? volume,
+  }) {
     return SoundEntryDto(
       id: id,
       file: file,
@@ -81,8 +88,28 @@ class SoundEntryDto {
       missing: missing,
       playCount: playCount,
       lastPlayedAt: lastPlayedAt,
+      volume: volume ?? this.volume,
     );
   }
+}
+
+/// A board (page) of sounds. Mirrors src/Soundpad/Api/Dto board fields.
+class BoardDto {
+  final String id;
+  final String name;
+  final String color;
+
+  const BoardDto({
+    required this.id,
+    required this.name,
+    required this.color,
+  });
+
+  factory BoardDto.fromJson(Map<String, dynamic> j) => BoardDto(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        color: (j['color'] as String?) ?? '#3b82f6',
+      );
 }
 
 class StateDto {
@@ -100,6 +127,8 @@ class StateDto {
   final List<SoundEntryDto> sounds;
   final String? nowPlaying;
   final bool authRequired;
+  final List<BoardDto> boards;
+  final String? activeBoardId;
 
   const StateDto({
     required this.audioDevice,
@@ -116,6 +145,8 @@ class StateDto {
     required this.sounds,
     required this.nowPlaying,
     required this.authRequired,
+    required this.boards,
+    required this.activeBoardId,
   });
 
   factory StateDto.fromJson(Map<String, dynamic> j) => StateDto(
@@ -139,7 +170,19 @@ class StateDto {
             .toList(),
         nowPlaying: j['nowPlaying'] as String?,
         authRequired: (j['authRequired'] as bool?) ?? true,
+        boards: ((j['boards'] as List<dynamic>?) ?? const [])
+            .map((e) => BoardDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        activeBoardId: j['activeBoardId'] as String?,
       );
+
+  /// The currently active board, or null if none resolves.
+  BoardDto? get activeBoard {
+    for (final b in boards) {
+      if (b.id == activeBoardId) return b;
+    }
+    return boards.isNotEmpty ? boards.first : null;
+  }
 }
 
 /// A placement that can be sent to /api/grid/layout. position == null clears it.
