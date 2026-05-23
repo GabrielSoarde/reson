@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.ap2quantum.reson"
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
