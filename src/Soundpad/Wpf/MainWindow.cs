@@ -826,13 +826,13 @@ public sealed class MainWindow : Window
         delete.Click += (_, _) =>
         {
             var confirm = System.Windows.MessageBox.Show(
-                $"Apagar o som \"{sound.Label}\"? O arquivo de áudio também será removido da pasta.",
-                "Reson — apagar som",
+                $"Remover o som \"{sound.Label}\" do board? O arquivo de áudio continua na pasta e pode ser readicionado depois.",
+                "Reson — remover som",
                 System.Windows.MessageBoxButton.YesNo,
                 System.Windows.MessageBoxImage.Question);
             if (confirm != System.Windows.MessageBoxResult.Yes) return;
-            try { _library.DeleteSound(sound.Id, deleteFile: true); }
-            catch (Exception ex) { ShowError($"Falha ao apagar: {ex.Message}"); }
+            try { _library.DeleteSound(sound.Id, deleteFile: false); }
+            catch (Exception ex) { ShowError($"Falha ao remover: {ex.Message}"); }
         };
         menu.Items.Add(delete);
 

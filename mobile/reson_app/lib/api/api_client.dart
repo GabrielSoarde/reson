@@ -198,10 +198,11 @@ class ApiClient {
     _expect204(r);
   }
 
-  /// Delete a sound and its file from disk.
+  /// Remove a sound from its board. The audio file stays on disk so it can be
+  /// re-added later (deleteFile=false).
   Future<void> deleteSound(String id) async {
     final r = await _http
-        .delete(_u('/api/sounds/$id?deleteFile=true'), headers: _bareHeaders())
+        .delete(_u('/api/sounds/$id?deleteFile=false'), headers: _bareHeaders())
         .timeout(_timeout);
     if (r.statusCode != 204 && r.statusCode != 200 && r.statusCode != 404) {
       throw ApiException(r.statusCode, r.body);

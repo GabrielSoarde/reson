@@ -123,7 +123,7 @@ class _SoundEditorSheetState extends State<SoundEditorSheet> {
           OutlinedButton.icon(
             onPressed: widget.onDelete,
             icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-            label: const Text('Apagar',
+            label: const Text('Remover do board',
                 style: TextStyle(color: AppColors.danger)),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.danger),

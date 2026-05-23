@@ -494,8 +494,8 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Apagar som?'),
-        content: Text('"${sound.label}" será removido permanentemente.'),
+        title: const Text('Remover som?'),
+        content: Text('"${sound.label}" sai do board. O arquivo de áudio continua na pasta e pode ser readicionado depois.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -503,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Apagar', style: TextStyle(color: AppColors.danger)),
+            child: const Text('Remover', style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -513,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _api.deleteSound(sound.id);
       await _refreshState();
     } catch (_) {
-      _toast('Falha ao apagar som');
+      _toast('Falha ao remover som');
     }
   }
 
