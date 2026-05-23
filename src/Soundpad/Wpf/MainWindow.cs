@@ -134,8 +134,22 @@ public sealed class MainWindow : Window
         Closing += OnClosingHideToTray;
         Closed += OnClosedUnsubscribe;
 
-        Loaded += (_, _) => WarnIfNoAudioDevice();
+        Loaded += (_, _) =>
+        {
+            WarnIfNoAudioDevice();
+            // Fire-and-forget update check — never blocks startup, never throws.
+            // CheckAndPromptAsync swallows network errors and only prompts when a
+            // strictly-newer release with a ResonSetup.exe asset exists.
+            _ = UpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: true);
+        };
     }
+
+    /// <summary>
+    /// Manual "Verificar atualizações" entry point (tray menu). Reports the
+    /// result even when up to date / offline, unlike the silent startup check.
+    /// </summary>
+    public void CheckForUpdatesManually()
+        => _ = UpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: false);
 
     /// <summary>
     /// Load Reson.ico from the embedded WPF resource manifest and apply it as

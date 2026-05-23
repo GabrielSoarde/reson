@@ -15,6 +15,9 @@
          but the assembly/exe ships as Reson.exe and the EXE/window icons come from
          assets/Reson.ico. -->
     <AssemblyName>Reson</AssemblyName>
+    <!-- Mirrors Soundpad.AppVersion.Current and installer MyAppVersion so the
+         assembly version, the update check, and the release tag all agree. -->
+    <Version>1.0.0</Version>
     <ApplicationIcon>..\..\assets\Reson.ico</ApplicationIcon>
     <!--
       WPF SDK auto-detects App.xaml/MainWindow.xaml and synthesizes an entry point.

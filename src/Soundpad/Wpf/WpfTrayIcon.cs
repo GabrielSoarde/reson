@@ -49,6 +49,7 @@ public sealed class WpfTrayIcon : IDisposable
         menu.Items.Add($"{ip}:{_port}").Click += (_, _) => System.Threading.Tasks.Task.Run(() => Clipboard.SetText(url));
         menu.Items.Add("Mostrar QR code").Click += (_, _) => new QrWindow(url).ShowDialog();
         menu.Items.Add("Abrir pasta de sons").Click += (_, _) => System.Diagnostics.Process.Start("explorer.exe", Path.Combine(AppContext.BaseDirectory, "sounds"));
+        menu.Items.Add("Verificar atualizações").Click += (_, _) => _window.CheckForUpdatesManually();
         menu.Items.Add("Sair").Click += (_, _) =>
         {
             // Shutdown order: hide tray → stop WPF Application → kill the whole
