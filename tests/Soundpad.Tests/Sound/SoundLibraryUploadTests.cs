@@ -29,7 +29,7 @@ public class SoundLibraryUploadTests : IDisposable
     {
         var r = _lib.Upload("hello.mp3", MakeStream(1024));
         File.Exists(Path.Combine(_tempDir, "sounds", "hello.mp3")).Should().BeTrue();
-        _lib.Config.Sounds.Should().ContainSingle(s => s.Id == "hello");
+        _lib.ActiveBoard.Sounds.Should().ContainSingle(s => s.Id == "hello");
         r.Entry.Position.Should().Be(new GridPosition(0, 0));
     }
 
@@ -69,11 +69,11 @@ public class SoundLibraryUploadTests : IDisposable
     [Fact]
     public void Upload_File_Deleted_On_Too_Large()
     {
-        var soundsCountBefore = _lib.Config.Sounds.Count;
+        var soundsCountBefore = _lib.ActiveBoard.Sounds.Count;
         Assert.Throws<InvalidOperationException>(() =>
             _lib.Upload("big.mp3", MakeStream((int)SoundLibrary.MaxUploadBytes + 1)));
         Directory.GetFiles(Path.Combine(_tempDir, "sounds")).Should().BeEmpty();
-        _lib.Config.Sounds.Count.Should().Be(soundsCountBefore);
+        _lib.ActiveBoard.Sounds.Count.Should().Be(soundsCountBefore);
     }
 
     [Fact]
@@ -105,10 +105,10 @@ public class SoundLibraryUploadTests : IDisposable
     [Fact]
     public void Upload_Grid_Full_Expands_Rows()
     {
-        _lib.MutateConfig(c => c with { Grid = new GridLayout(1, 1) });
+        _lib.ResizeGrid(1, 1);
         _lib.Upload("a.mp3", MakeStream(10));
         _lib.Upload("b.mp3", MakeStream(10));
-        _lib.Config.Grid.Rows.Should().Be(2);
-        _lib.Config.Sounds.Should().HaveCount(2);
+        _lib.ActiveBoard.Grid.Rows.Should().Be(2);
+        _lib.ActiveBoard.Sounds.Should().HaveCount(2);
     }
 }

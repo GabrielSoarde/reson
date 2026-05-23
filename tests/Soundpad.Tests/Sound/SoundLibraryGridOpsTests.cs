@@ -28,30 +28,30 @@ public class SoundLibraryGridOpsTests : IDisposable
     [Fact]
     public void ResizeGrid_Shrinking_Marks_OutOfBounds_As_Null()
     {
-        _lib.MutateConfig(c => c with { Grid = new GridLayout(5, 5) });
-        var a = _lib.Config.Sounds[0];
+        _lib.ResizeGrid(5, 5);
+        var a = _lib.ActiveBoard.Sounds[0];
         _lib.UpdateSound(a.Id, position: new GridPosition(4, 4));
         _lib.ResizeGrid(2, 2);
-        _lib.Config.Sounds.Single(s => s.Id == a.Id).Position.Should().BeNull();
+        _lib.ActiveBoard.Sounds.Single(s => s.Id == a.Id).Position.Should().BeNull();
     }
 
     [Fact]
     public void UpdateSound_Swaps_When_Position_Occupied()
     {
-        var ids = _lib.Config.Sounds.Select(s => s.Id).ToList();
-        var aPos = _lib.Config.Sounds.Single(s => s.Id == ids[0]).Position!;
-        var bPos = _lib.Config.Sounds.Single(s => s.Id == ids[1]).Position!;
+        var ids = _lib.ActiveBoard.Sounds.Select(s => s.Id).ToList();
+        var aPos = _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[0]).Position!;
+        var bPos = _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[1]).Position!;
         _lib.UpdateSound(ids[0], position: bPos);
-        _lib.Config.Sounds.Single(s => s.Id == ids[0]).Position.Should().Be(bPos);
-        _lib.Config.Sounds.Single(s => s.Id == ids[1]).Position.Should().Be(aPos);
+        _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[0]).Position.Should().Be(bPos);
+        _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[1]).Position.Should().Be(aPos);
     }
 
     [Fact]
     public void UpdateSound_Renames_Label_And_Color()
     {
-        var id = _lib.Config.Sounds[0].Id;
+        var id = _lib.ActiveBoard.Sounds[0].Id;
         _lib.UpdateSound(id, label: "NEW NAME", color: "#ff0000");
-        var updated = _lib.Config.Sounds.Single(s => s.Id == id);
+        var updated = _lib.ActiveBoard.Sounds.Single(s => s.Id == id);
         updated.Label.Should().Be("NEW NAME");
         updated.Color.Should().Be("#ff0000");
     }
@@ -59,15 +59,15 @@ public class SoundLibraryGridOpsTests : IDisposable
     [Fact]
     public void DeleteSound_Removes_Entry()
     {
-        var id = _lib.Config.Sounds[0].Id;
+        var id = _lib.ActiveBoard.Sounds[0].Id;
         _lib.DeleteSound(id, deleteFile: false);
-        _lib.Config.Sounds.Should().NotContain(s => s.Id == id);
+        _lib.ActiveBoard.Sounds.Should().NotContain(s => s.Id == id);
     }
 
     [Fact]
     public void DeleteSound_With_DeleteFile_True_Removes_File()
     {
-        var entry = _lib.Config.Sounds[0];
+        var entry = _lib.ActiveBoard.Sounds[0];
         _lib.DeleteSound(entry.Id, deleteFile: true);
         File.Exists(Path.Combine(_tempDir, "sounds", entry.File)).Should().BeFalse();
     }
@@ -75,11 +75,11 @@ public class SoundLibraryGridOpsTests : IDisposable
     [Fact]
     public void ApplyLayout_Atomic_Rejects_Duplicates()
     {
-        var ids = _lib.Config.Sounds.Select(s => s.Id).ToList();
-        var dup = new[]
+        var ids = _lib.ActiveBoard.Sounds.Select(s => s.Id).ToList();
+        var dup = new (string Id, GridPosition? Position)[]
         {
-            (ids[0], (GridPosition?)new GridPosition(0, 0)),
-            (ids[1], (GridPosition?)new GridPosition(0, 0)),
+            (ids[0], new GridPosition(0, 0)),
+            (ids[1], new GridPosition(0, 0)),
         };
         Assert.Throws<InvalidOperationException>(() => _lib.ApplyLayout(dup));
     }
@@ -87,14 +87,14 @@ public class SoundLibraryGridOpsTests : IDisposable
     [Fact]
     public void ApplyLayout_Atomic_Applies_All_Or_Nothing()
     {
-        var ids = _lib.Config.Sounds.Select(s => s.Id).ToList();
+        var ids = _lib.ActiveBoard.Sounds.Select(s => s.Id).ToList();
         var placements = new (string, GridPosition?)[]
         {
             (ids[0], new GridPosition(2, 0)),
             (ids[1], new GridPosition(0, 2)),
         };
         _lib.ApplyLayout(placements);
-        _lib.Config.Sounds.Single(s => s.Id == ids[0]).Position.Should().Be(new GridPosition(2, 0));
-        _lib.Config.Sounds.Single(s => s.Id == ids[1]).Position.Should().Be(new GridPosition(0, 2));
+        _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[0]).Position.Should().Be(new GridPosition(2, 0));
+        _lib.ActiveBoard.Sounds.Single(s => s.Id == ids[1]).Position.Should().Be(new GridPosition(0, 2));
     }
 }

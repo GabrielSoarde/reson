@@ -7,7 +7,13 @@ public record SoundEntryDto(
     // Schema v3 usage stats. PlayCount is the total accepted Plays for this
     // sound (server-authoritative; no client-side mutation endpoint).
     // LastPlayedAt is UTC ISO-8601 — the frontend localizes.
-    int PlayCount = 0, DateTime? LastPlayedAt = null);
+    int PlayCount = 0, DateTime? LastPlayedAt = null,
+    // Schema v4: per-sound volume 0-100 (UI scale). Defaults to 100 for any
+    // older client that doesn't model it.
+    int Volume = 100);
+
+/// <summary>Lightweight board summary used by /api/state and /api/boards.</summary>
+public record BoardSummaryDto(string Id, string Name, string Color);
 
 /// <summary>
 /// State emitted to the WPF window and phone web UI.
@@ -17,6 +23,12 @@ public record SoundEntryDto(
 /// (round-trippable into POST bodies). The corresponding <c>*DeviceName</c>
 /// fields are the current FriendlyNames resolved at the moment of state
 /// emission — for display only, and null if the device is currently unplugged.</para>
+///
+/// <para>Multi-board model (schema v4+): <see cref="Boards"/> lists every board
+/// and <see cref="ActiveBoardId"/> identifies which one the rest of the
+/// payload describes (Grid + Sounds reflect the active board only). Legacy
+/// clients that don't render the boards list still get a working single-board
+/// experience because Grid + Sounds are at the same top-level shape as v3.</para>
 /// </summary>
 public record StateDto(
     string? AudioDevice, string? MonitorDevice, bool MonitorEnabled,
@@ -28,4 +40,9 @@ public record StateDto(
     IReadOnlyList<string>? AvailableInputDevices = null,
     string? AudioDeviceName = null,
     string? MonitorDeviceName = null,
-    string? MicDeviceName = null);
+    string? MicDeviceName = null,
+    // Schema v4: multi-board surface. Always non-null in practice (the library
+    // backfills a default board on Load), but typed nullable so the record's
+    // default constructor remains usable by hand-written test fixtures.
+    IReadOnlyList<BoardSummaryDto>? Boards = null,
+    string? ActiveBoardId = null);

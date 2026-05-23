@@ -81,14 +81,16 @@ public class SoundLibraryMigrationTests : IDisposable
 
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
-        lib.Config.SchemaVersion.Should().Be(1);
+        // Load() auto-bumps the schema version to current (v4) during
+        // structural migration (v3 → v4 wraps grid/sounds into a default
+        // board). Device fields still carry the legacy FriendlyName strings
+        // though — those need MigrateDeviceIdentifiers to translate.
+        lib.Config.SchemaVersion.Should().Be(4);
+        lib.Config.AudioDevice.Should().Be("VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)");
 
         lib.MigrateDeviceIdentifiers(loc);
 
-        // v1 → v2 device migration also jumps the schema all the way to
-        // current (v3 as of 2026-05) since v2 → v3 is a pure bump
-        // (SoundEntry gained PlayCount + LastPlayedAt, both defaulted).
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
         lib.Config.AudioDevice.Should().Be("{vm-id}");
         lib.Config.MonitorDevice.Should().Be("{hp-id}");
         lib.Config.MicDevice.Should().Be("{mic-id}");
@@ -108,7 +110,7 @@ public class SoundLibraryMigrationTests : IDisposable
         lib.Load();
         lib.MigrateDeviceIdentifiers(loc);
 
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
         lib.Config.AudioDevice.Should().Be("{vm-id}");
         lib.Config.MonitorDevice.Should().BeNull(); // unresolvable → cleared
         lib.Config.MicDevice.Should().BeNull();
@@ -123,14 +125,14 @@ public class SoundLibraryMigrationTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         lib.MigrateDeviceIdentifiers(loc);
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
         var firstId = lib.Config.AudioDevice;
 
         // Reload and call migrate again — should be a no-op
         var lib2 = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib2.Load();
         lib2.MigrateDeviceIdentifiers(loc);
-        lib2.Config.SchemaVersion.Should().Be(3);
+        lib2.Config.SchemaVersion.Should().Be(4);
         lib2.Config.AudioDevice.Should().Be(firstId);
     }
 
@@ -145,7 +147,7 @@ public class SoundLibraryMigrationTests : IDisposable
 
         // Read the file directly to confirm it was rewritten
         var raw = File.ReadAllText(Path.Combine(_tempDir, "config.json"));
-        raw.Should().Contain("\"schemaVersion\": 3");
+        raw.Should().Contain("\"schemaVersion\": 4");
         raw.Should().Contain("{spk-id}");
     }
 
@@ -163,7 +165,7 @@ public class SoundLibraryMigrationTests : IDisposable
         lib.MigrateDeviceIdentifiers(loc);
 
         lib.Config.AudioDevice.Should().Be(existingId);
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
     }
 
     [Fact]
@@ -188,13 +190,13 @@ public class SoundLibraryMigrationTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         // Load() auto-bumps v2 → v3 (pure schema bump, no field migration).
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
 
         lib.MigrateDeviceIdentifiers(loc);
 
         // Still v3, AudioDevice preserved (not nulled, even though the
         // enumerator can't see it — we never re-validate v2 ids on migration)
-        lib.Config.SchemaVersion.Should().Be(3);
+        lib.Config.SchemaVersion.Should().Be(4);
         lib.Config.AudioDevice.Should().Be("{0.0.0.00000000}.{existing}");
     }
 }

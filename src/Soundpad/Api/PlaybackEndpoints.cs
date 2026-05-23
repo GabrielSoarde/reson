@@ -15,14 +15,18 @@ public static class PlaybackEndpoints
         g.MapGet("/state", (SoundLibrary lib, PlaybackEngine engine, DeviceLocator loc) =>
         {
             var statuses = lib.GetRuntimeStatuses().ToDictionary(s => s.Id, s => s.Missing);
-            var entries = lib.Config.Sounds.Select(s => new SoundEntryDto(
+            var active = lib.ActiveBoard;
+            var entries = active.Sounds.Select(s => new SoundEntryDto(
                 s.Id, s.File, s.Label, s.Color, s.Icon, s.Position,
                 statuses.TryGetValue(s.Id, out var m) && m,
-                s.PlayCount, s.LastPlayedAt)).ToList();
+                s.PlayCount, s.LastPlayedAt, s.Volume)).ToList();
+            var boards = lib.Config.Boards
+                .Select(b => new BoardSummaryDto(b.Id, b.Name, b.Color))
+                .ToList();
             return new StateDto(
                 lib.Config.AudioDevice, lib.Config.MonitorDevice, lib.Config.MonitorEnabled,
                 loc.EnumerateRenderDeviceNames(),
-                lib.Config.Volume, lib.Config.Grid, entries,
+                lib.Config.Volume, active.Grid, entries,
                 engine.NowPlaying, AuthRequired: true,
                 MicDevice: lib.Config.MicDevice,
                 AvailableInputDevices: SafeListInputs(loc),
@@ -30,12 +34,18 @@ public static class PlaybackEndpoints
                 // unplug/replug is reflected without an explicit refresh hook.
                 AudioDeviceName: loc.ResolveCurrentName(lib.Config.AudioDevice),
                 MonitorDeviceName: loc.ResolveCurrentName(lib.Config.MonitorDevice),
-                MicDeviceName: loc.ResolveCurrentName(lib.Config.MicDevice));
+                MicDeviceName: loc.ResolveCurrentName(lib.Config.MicDevice),
+                Boards: boards,
+                ActiveBoardId: lib.Config.ActiveBoardId);
         });
 
         g.MapPost("/play/{soundId}", (string soundId, SoundLibrary lib, PlaybackEngine engine, AppOptions opts) =>
         {
-            var entry = lib.Config.Sounds.FirstOrDefault(s => s.Id == soundId);
+            // Look up the sound across every board — playing a sound is
+            // scoped to its owner board, but the caller doesn't need to know
+            // which board it lives on (handy for keyboard shortcuts and the
+            // mobile recent-sounds list).
+            var entry = lib.Config.Boards.SelectMany(b => b.Sounds).FirstOrDefault(s => s.Id == soundId);
             if (entry is null) return Results.NotFound();
             var path = Path.Combine(opts.RootDir, "sounds", entry.File);
             if (!File.Exists(path)) return Results.NotFound();

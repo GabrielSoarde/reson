@@ -11,7 +11,11 @@ public record SoundConfig
     // v2 → v3 (2026-05): SoundEntry gains PlayCount + LastPlayedAt usage
     // stats. Pure schema bump — new fields default to 0 / null via record
     // initializers, so existing v2 entries deserialize cleanly.
-    public int SchemaVersion { get; init; } = 3;
+    // v3 → v4 (2026-05): multi-board support. The top-level Grid + Sounds
+    // collapse into a Boards list; SoundEntry gains Volume (0-100). Load()
+    // wraps a v3 config in a single "default" board to preserve all sounds
+    // and the user's grid dimensions.
+    public int SchemaVersion { get; init; } = 4;
     public string AuthToken { get; init; } = "";
     public int Port { get; init; } = 8080;
     public string? PreferredNetworkAdapter { get; init; }
@@ -21,13 +25,22 @@ public record SoundConfig
     public bool MonitorEnabled { get; init; }
     public int Volume { get; init; } = 80;
     public int LatencyMs { get; init; } = 50;
-    public GridLayout Grid { get; init; } = new(3, 4);
-    public List<SoundEntry> Sounds { get; init; } = new();
+    // Schema v4: boards replace the single top-level Grid+Sounds. Default
+    // config starts with one board called "Padrão" — the user can rename it
+    // or add more from the WPF Boards panel.
+    public List<Board> Boards { get; init; } = new();
+    public string ActiveBoardId { get; init; } = "";
 
-    public static SoundConfig Default() => new()
+    public static SoundConfig Default()
     {
-        AuthToken = GenerateToken(),
-    };
+        var board = new Board { Id = "default", Name = "Padrão", Color = "#3b82f6" };
+        return new SoundConfig
+        {
+            AuthToken = GenerateToken(),
+            Boards = new List<Board> { board },
+            ActiveBoardId = board.Id,
+        };
+    }
 
     private static string GenerateToken()
     {

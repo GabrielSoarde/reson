@@ -14,4 +14,9 @@ public record SoundEntry
     // frontend localizes for display.
     public int PlayCount { get; init; } = 0;
     public DateTime? LastPlayedAt { get; init; } = null;
+    // Schema v4: per-sound volume in 0-100 (UI scale). The playback engine
+    // multiplies the global volume by (Volume / 100) so a sound effectively
+    // ceiling-caps below the master fader. Default 100 = no attenuation,
+    // matching pre-v4 behavior so the migration is value-neutral.
+    public int Volume { get; init; } = 100;
 }

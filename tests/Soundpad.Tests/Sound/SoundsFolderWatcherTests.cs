@@ -41,9 +41,9 @@ public class SoundsFolderWatcherTests : IDisposable
         File.WriteAllBytes(Path.Combine(_soundsDir, "hello.mp3"), new byte[10]);
 
         // Wait long enough for the FSW event + the 50ms debounce + the flush.
-        await WaitUntil(() => lib.Config.Sounds.Any(s => s.File == "hello.mp3"), TimeSpan.FromSeconds(2));
+        await WaitUntil(() => lib.ActiveBoard.Sounds.Any(s => s.File == "hello.mp3"), TimeSpan.FromSeconds(2));
 
-        lib.Config.Sounds.Should().ContainSingle(s => s.File == "hello.mp3");
+        lib.ActiveBoard.Sounds.Should().ContainSingle(s => s.File == "hello.mp3");
         changedCount.Should().BeGreaterThan(0);
     }
 
@@ -64,7 +64,7 @@ public class SoundsFolderWatcherTests : IDisposable
         // Give the FSW + debounce a generous window — nothing should fire.
         await Task.Delay(400);
         changes.Should().Be(0);
-        lib.Config.Sounds.Should().BeEmpty();
+        lib.ActiveBoard.Sounds.Should().BeEmpty();
     }
 
     [Fact]
@@ -82,9 +82,9 @@ public class SoundsFolderWatcherTests : IDisposable
         for (int i = 0; i < 5; i++)
             File.WriteAllBytes(Path.Combine(_soundsDir, $"s{i}.mp3"), new byte[10]);
 
-        await WaitUntil(() => lib.Config.Sounds.Count == 5, TimeSpan.FromSeconds(2));
+        await WaitUntil(() => lib.ActiveBoard.Sounds.Count == 5, TimeSpan.FromSeconds(2));
 
-        lib.Config.Sounds.Should().HaveCount(5);
+        lib.ActiveBoard.Sounds.Should().HaveCount(5);
         // AutoScan fires Changed at most once per flush; FSW bursts can
         // sometimes split across two debounce windows (the first file racing
         // ahead of the next four). Accept either pattern.
@@ -99,7 +99,7 @@ public class SoundsFolderWatcherTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         lib.AutoScan();
-        lib.Config.Sounds.Should().HaveCount(1);
+        lib.ActiveBoard.Sounds.Should().HaveCount(1);
 
         int changesAfterStart = 0;
         // Wire Changed AFTER the watcher starts so we measure only delete-driven fires.

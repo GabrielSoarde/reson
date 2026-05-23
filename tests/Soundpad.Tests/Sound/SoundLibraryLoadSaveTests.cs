@@ -24,9 +24,9 @@ public class SoundLibraryLoadSaveTests : IDisposable
     {
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
-        // Default config is born under the current schema (v3: device ids +
-        // usage stats).
-        lib.Config.SchemaVersion.Should().Be(3);
+        // Default config is born under the current schema (v4: device ids,
+        // usage stats, multi-board).
+        lib.Config.SchemaVersion.Should().Be(4);
         File.Exists(Path.Combine(_tempDir, "config.json")).Should().BeTrue();
     }
 

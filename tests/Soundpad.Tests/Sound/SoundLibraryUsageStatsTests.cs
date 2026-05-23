@@ -29,7 +29,7 @@ public class SoundLibraryUsageStatsTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         lib.AutoScan();
-        lib.Config.Sounds.Should().HaveCount(1);
+        lib.ActiveBoard.Sounds.Should().HaveCount(1);
         return lib;
     }
 
@@ -37,14 +37,14 @@ public class SoundLibraryUsageStatsTests : IDisposable
     public void RecordPlay_Increments_Count_And_Sets_Timestamp()
     {
         var lib = BuildLibraryWithOneSound();
-        var id = lib.Config.Sounds[0].Id;
+        var id = lib.ActiveBoard.Sounds[0].Id;
         var before = DateTime.UtcNow.AddSeconds(-1); // tolerance for clock skew
 
         lib.RecordPlay(id);
         lib.RecordPlay(id);
         lib.RecordPlay(id);
 
-        var entry = lib.Config.Sounds[0];
+        var entry = lib.ActiveBoard.Sounds[0];
         entry.PlayCount.Should().Be(3);
         entry.LastPlayedAt.Should().NotBeNull();
         entry.LastPlayedAt!.Value.Should().BeAfter(before);
@@ -55,29 +55,29 @@ public class SoundLibraryUsageStatsTests : IDisposable
     public void RecordPlay_Unknown_Id_Is_NoOp()
     {
         var lib = BuildLibraryWithOneSound();
-        var beforeCount = lib.Config.Sounds[0].PlayCount;
-        var beforeStamp = lib.Config.Sounds[0].LastPlayedAt;
+        var beforeCount = lib.ActiveBoard.Sounds[0].PlayCount;
+        var beforeStamp = lib.ActiveBoard.Sounds[0].LastPlayedAt;
 
         // Phantom id (mid-delete race) — must not throw.
         var act = () => lib.RecordPlay("does-not-exist");
         act.Should().NotThrow();
 
-        lib.Config.Sounds[0].PlayCount.Should().Be(beforeCount);
-        lib.Config.Sounds[0].LastPlayedAt.Should().Be(beforeStamp);
+        lib.ActiveBoard.Sounds[0].PlayCount.Should().Be(beforeCount);
+        lib.ActiveBoard.Sounds[0].LastPlayedAt.Should().Be(beforeStamp);
     }
 
     [Fact]
     public void RecordPlay_Persists_To_Disk()
     {
         var lib = BuildLibraryWithOneSound();
-        var id = lib.Config.Sounds[0].Id;
+        var id = lib.ActiveBoard.Sounds[0].Id;
         lib.RecordPlay(id);
         lib.RecordPlay(id);
 
         // Reload from the same dir — values must round-trip.
         var lib2 = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib2.Load();
-        var reloaded = lib2.Config.Sounds.Single(s => s.Id == id);
+        var reloaded = lib2.ActiveBoard.Sounds.Single(s => s.Id == id);
         reloaded.PlayCount.Should().Be(2);
         reloaded.LastPlayedAt.Should().NotBeNull();
     }
@@ -86,7 +86,7 @@ public class SoundLibraryUsageStatsTests : IDisposable
     public void RecordPlay_Raises_Changed_Event()
     {
         var lib = BuildLibraryWithOneSound();
-        var id = lib.Config.Sounds[0].Id;
+        var id = lib.ActiveBoard.Sounds[0].Id;
         var fired = 0;
         lib.Changed += () => Interlocked.Increment(ref fired);
 
@@ -125,8 +125,10 @@ public class SoundLibraryUsageStatsTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        lib.Config.SchemaVersion.Should().Be(3);
-        var entry = lib.Config.Sounds.Single();
+        // v2 → v4 migration: schema bumps to current, and the top-level
+        // grid+sounds get wrapped into a default board.
+        lib.Config.SchemaVersion.Should().Be(4);
+        var entry = lib.ActiveBoard.Sounds.Single();
         entry.PlayCount.Should().Be(0);
         entry.LastPlayedAt.Should().BeNull();
     }
@@ -162,7 +164,7 @@ public class SoundLibraryUsageStatsTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        var entry = lib.Config.Sounds.Single();
+        var entry = lib.ActiveBoard.Sounds.Single();
         entry.PlayCount.Should().Be(42);
         entry.LastPlayedAt.Should().NotBeNull();
         entry.LastPlayedAt!.Value.ToUniversalTime().Should().Be(stamp);

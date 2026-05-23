@@ -27,9 +27,9 @@ public class SoundLibraryBootTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         lib.AutoScan();
-        lib.Config.Sounds.Should().HaveCount(2);
-        lib.Config.Sounds.Should().Contain(s => s.File == "drop.mp3");
-        lib.Config.Sounds.Should().Contain(s => s.File == "boom.wav");
+        lib.ActiveBoard.Sounds.Should().HaveCount(2);
+        lib.ActiveBoard.Sounds.Should().Contain(s => s.File == "drop.mp3");
+        lib.ActiveBoard.Sounds.Should().Contain(s => s.File == "boom.wav");
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class SoundLibraryBootTests : IDisposable
         lib.Load();
         lib.AutoScan();
         lib.AutoScan(); // second call should not double-add
-        lib.Config.Sounds.Should().HaveCount(1);
+        lib.ActiveBoard.Sounds.Should().HaveCount(1);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class SoundLibraryBootTests : IDisposable
         lib.AutoScan();
         File.Delete(Path.Combine(_tempDir, "sounds", "x.mp3"));
         var status = lib.GetRuntimeStatuses();
-        status.Should().ContainSingle(s => s.Id == lib.Config.Sounds[0].Id && s.Missing);
+        status.Should().ContainSingle(s => s.Id == lib.ActiveBoard.Sounds[0].Id && s.Missing);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class SoundLibraryBootTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
         lib.RepairInvariants();
-        lib.Config.Sounds[0].Position.Should().Be(new GridPosition(0, 0));
-        lib.Config.Sounds[1].Position.Should().BeNull();
+        lib.ActiveBoard.Sounds[0].Position.Should().Be(new GridPosition(0, 0));
+        lib.ActiveBoard.Sounds[1].Position.Should().BeNull();
     }
 }

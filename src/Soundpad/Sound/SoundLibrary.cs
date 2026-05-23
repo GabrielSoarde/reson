@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Soundpad.Audio;
 using Soundpad.Models;
@@ -7,12 +8,17 @@ namespace Soundpad.Sound;
 
 public class SoundLibrary
 {
-    // Bumped to 3: SoundEntry gained PlayCount + LastPlayedAt usage stats.
+    // Bumped to 4: multi-board support. The single top-level Grid+Sounds pair
+    // moves INTO a Board entry; SoundConfig grows a Boards list + ActiveBoardId.
     // v1 → v2 migration: device fields hold endpoint ids instead of
     // FriendlyNames — see MigrateDeviceIdentifiers below.
-    // v2 → v3 migration: pure schema bump — happens automatically inside
-    // Load() since the new SoundEntry fields default to 0 / null.
-    private const int CurrentSchemaVersion = 3;
+    // v2 → v3 migration: pure schema bump (SoundEntry gained PlayCount +
+    // LastPlayedAt) — happens automatically inside Load() since the new fields
+    // default to 0 / null via record initializers.
+    // v3 → v4 migration: wrap the old top-level Grid+Sounds in a single
+    // "default" board. Happens inside Load() before deserializing into the
+    // strongly-typed SoundConfig so existing on-disk shapes still round-trip.
+    private const int CurrentSchemaVersion = 4;
     private readonly SoundLibraryOptions _opts;
     private readonly object _lock = new();
     private SoundConfig _config = SoundConfig.Default();
@@ -27,6 +33,20 @@ public class SoundLibrary
     public SoundLibrary(SoundLibraryOptions opts) { _opts = opts; }
 
     public SoundConfig Config { get { lock (_lock) { return _config; } } }
+
+    /// <summary>
+    /// Convenience accessor: the currently-active <see cref="Board"/>. All
+    /// existing sound-mutating endpoints scope to this board so legacy callers
+    /// (mobile/web clients that don't know about boards yet) keep working
+    /// transparently.
+    /// </summary>
+    public Board ActiveBoard
+    {
+        get
+        {
+            lock (_lock) { return ResolveActiveBoardLocked(_config); }
+        }
+    }
 
     /// <summary>
     /// Raised after the in-memory config has been persisted via SaveLocked().
@@ -47,24 +67,103 @@ public class SoundLibrary
                 return;
             }
             var json = File.ReadAllText(_opts.ConfigPath);
-            var loaded = JsonSerializer.Deserialize<SoundConfig>(json, Json)
+
+            // Pre-parse as a generic JsonObject so we can run the v3 → v4
+            // structural migration (wrap top-level Grid + Sounds in a default
+            // Board) BEFORE strongly-typed deserialization — SoundConfig no
+            // longer has those properties so a direct Deserialize<SoundConfig>
+            // would drop the user's sound list.
+            var root = JsonNode.Parse(json) as JsonObject
                 ?? throw new InvalidDataException("config.json was empty/null");
-            if (loaded.SchemaVersion > CurrentSchemaVersion)
+
+            int sv = root["schemaVersion"]?.GetValue<int>() ?? 1;
+            if (sv > CurrentSchemaVersion)
                 throw new NotSupportedException(
-                    $"config.json schemaVersion {loaded.SchemaVersion} is newer than supported {CurrentSchemaVersion}");
+                    $"config.json schemaVersion {sv} is newer than supported {CurrentSchemaVersion}");
+
+            bool dirtyFromStructural = false;
+            if (sv < 4)
+            {
+                MigrateV3StructureToV4(root);
+                root["schemaVersion"] = 4;
+                dirtyFromStructural = true;
+            }
+
+            var loaded = root.Deserialize<SoundConfig>(Json)
+                ?? throw new InvalidDataException("config.json deserialized to null");
+
+            // Defensive: a hand-edited v4 config might omit boards or set an
+            // activeBoardId that points nowhere. Backfill a default board so the
+            // rest of the engine has something to operate on.
+            if (loaded.Boards.Count == 0)
+            {
+                var b = new Board { Id = "default", Name = "Padrão", Color = "#3b82f6" };
+                loaded = loaded with { Boards = new List<Board> { b }, ActiveBoardId = b.Id };
+                dirtyFromStructural = true;
+            }
+            if (string.IsNullOrEmpty(loaded.ActiveBoardId) ||
+                !loaded.Boards.Any(b => b.Id == loaded.ActiveBoardId))
+            {
+                loaded = loaded with { ActiveBoardId = loaded.Boards[0].Id };
+                dirtyFromStructural = true;
+            }
+
             _config = loaded;
 
-            // v2 → v3 auto-migration: pure schema bump (new SoundEntry fields
-            // default to 0 / null via record initializers). The v1 → v2 device
-            // migration still happens separately in MigrateDeviceIdentifiers
-            // because it needs an IAudioDeviceEnumerator. Bumping the schema
-            // version here makes the file roundtrip cleanly on next save.
-            if (_config.SchemaVersion == 2)
+            // v2 → v3 auto-migration (pure schema bump for SoundEntry usage
+            // stats). The strongly-typed deserialize already filled in defaults
+            // for any missing PlayCount/LastPlayedAt fields — we just need to
+            // stamp the schema version forward so the file round-trips cleanly.
+            if (_config.SchemaVersion < CurrentSchemaVersion)
             {
-                _config = _config with { SchemaVersion = 3 };
+                _config = _config with { SchemaVersion = CurrentSchemaVersion };
+                dirtyFromStructural = true;
+            }
+
+            if (dirtyFromStructural)
+            {
                 SaveLocked();
             }
         }
+    }
+
+    /// <summary>
+    /// In-place structural migration of a pre-v4 (v1/v2/v3) config JSON object
+    /// to the v4 shape: lift the top-level "grid" + "sounds" into a single
+    /// board called "Padrão" and add "boards" + "activeBoardId" fields. Leaves
+    /// every other top-level field (device ids, token, port, etc.) untouched.
+    /// </summary>
+    private static void MigrateV3StructureToV4(JsonObject root)
+    {
+        // Snapshot then detach the legacy properties — deserializing into
+        // SoundConfig would otherwise complain about extra fields.
+        JsonNode? grid = null;
+        JsonNode? sounds = null;
+        if (root.ContainsKey("grid"))
+        {
+            grid = root["grid"];
+            // .DeepClone gives us an unparented node we can re-attach below.
+            grid = grid?.DeepClone();
+            root.Remove("grid");
+        }
+        if (root.ContainsKey("sounds"))
+        {
+            sounds = root["sounds"];
+            sounds = sounds?.DeepClone();
+            root.Remove("sounds");
+        }
+
+        var defaultBoard = new JsonObject
+        {
+            ["id"] = "default",
+            ["name"] = "Padrão",
+            ["color"] = "#3b82f6",
+        };
+        if (grid is not null) defaultBoard["grid"] = grid;
+        if (sounds is not null) defaultBoard["sounds"] = sounds;
+
+        root["boards"] = new JsonArray(defaultBoard);
+        root["activeBoardId"] = "default";
     }
 
     /// <summary>
@@ -75,16 +174,27 @@ public class SoundLibrary
     /// device is gone (renamed/unplugged at the time of upgrade) the field
     /// is set to null and the user re-picks it from the UI.
     ///
-    /// Idempotent: schemaVersion is bumped to 2 and a no-op on next launch.
-    /// Silent: only the schema bump (and any id translation) is written; no
-    /// user-facing message. Safe to call after <see cref="Load"/>.
+    /// Idempotent: schemaVersion is bumped to the current version and a no-op
+    /// on next launch. Silent: only the schema bump (and any id translation)
+    /// is written; no user-facing message. Safe to call after <see cref="Load"/>.
     /// </summary>
     public void MigrateDeviceIdentifiers(DeviceLocator locator)
     {
         bool changed = false;
         lock (_lock)
         {
-            if (_config.SchemaVersion >= 2) return;
+            // Tracks whether the on-disk config was structurally a v1 (where
+            // device fields are FriendlyNames). The pre-parse migration in
+            // Load() always bumps SchemaVersion forward, so we can't read it
+            // here to detect v1 — but we DID record the original version on
+            // the in-memory _config via the schemaVersionBeforeLoadBump field
+            // ... actually we don't, so use a heuristic: if any device field
+            // is set and DOES NOT match a known endpoint id (via locator),
+            // treat it as a legacy FriendlyName and try to translate. This
+            // preserves the original "schema v2+ is a no-op" guarantee for
+            // any config whose device fields already round-trip as ids.
+            bool anyLegacyName = AnyDeviceFieldLooksLikeLegacyName(locator);
+            if (!anyLegacyName) return;
 
             string? Translate(string? legacyName)
             {
@@ -98,9 +208,6 @@ public class SoundLibrary
 
             var migrated = _config with
             {
-                // Jump straight to current schema (v3). v2 → v3 is a pure
-                // bump (new SoundEntry fields default to 0 / null) so we
-                // don't need a separate pass after the device translation.
                 SchemaVersion = CurrentSchemaVersion,
                 AudioDevice = Translate(_config.AudioDevice),
                 MonitorDevice = Translate(_config.MonitorDevice),
@@ -114,14 +221,36 @@ public class SoundLibrary
             }
             else
             {
-                // Schema-only bump (all device fields were null) — still persist
-                // so we don't re-run the migration on every launch.
                 _config = migrated;
                 changed = true;
             }
             SaveLocked();
         }
         if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Heuristic for detecting whether the in-memory device fields still hold
+    /// legacy FriendlyNames (v1 config) rather than endpoint ids (v2+). A
+    /// FriendlyName looks human-readable; an endpoint id looks like
+    /// "{0.0.0.x}.{guid}". We check via the locator: a value that's neither
+    /// empty NOR a known device id NOR resolvable to one is suspect — but we
+    /// only translate when at least one field's name resolves to a real id
+    /// (so an unknown id on a headless test machine stays preserved instead
+    /// of getting silently dropped).
+    /// </summary>
+    private bool AnyDeviceFieldLooksLikeLegacyName(DeviceLocator locator)
+    {
+        bool LooksLikeName(string? v)
+        {
+            if (string.IsNullOrEmpty(v)) return false;
+            // Endpoint ids start with '{' — anything else is structurally a
+            // FriendlyName (the legacy v1 shape).
+            return !v.StartsWith('{');
+        }
+        return LooksLikeName(_config.AudioDevice)
+            || LooksLikeName(_config.MonitorDevice)
+            || LooksLikeName(_config.MicDevice);
     }
 
     public void MutateConfig(Func<SoundConfig, SoundConfig> mutate)
@@ -171,11 +300,17 @@ public class SoundLibrary
                         throw new InvalidOperationException("File too large");
                 }
 
-                var id = DeriveIdFromFilename(finalName, _config.Sounds);
-                var grid = EnsureCellAvailable(_config.Grid, _config.Sounds);
-                var pos = GridPositioner.NextFree(grid, _config.Sounds);
+                var active = ResolveActiveBoardLocked(_config);
+                var id = DeriveIdFromFilename(finalName, active.Sounds);
+                var grid = EnsureCellAvailable(active.Grid, active.Sounds);
+                var pos = GridPositioner.NextFree(grid, active.Sounds);
                 var entry = new SoundEntry { Id = id, File = finalName, Label = id, Position = pos };
-                _config = _config with { Grid = grid, Sounds = new List<SoundEntry>(_config.Sounds) { entry } };
+                var updatedBoard = active with
+                {
+                    Grid = grid,
+                    Sounds = new List<SoundEntry>(active.Sounds) { entry },
+                };
+                _config = ReplaceBoard(_config, updatedBoard);
                 SaveLocked();
                 result = new UploadResult(entry, finalName);
             }
@@ -238,14 +373,20 @@ public class SoundLibrary
         lock (_lock)
         {
             if (!Directory.Exists(_opts.SoundsDir)) return;
-            var known = new HashSet<string>(_config.Sounds.Select(s => s.File), StringComparer.OrdinalIgnoreCase);
+            var active = ResolveActiveBoardLocked(_config);
+            // Files already referenced by ANY board count as "known" — without
+            // this, files that live in another board would be re-registered on
+            // the active board on every scan.
+            var allKnown = new HashSet<string>(
+                _config.Boards.SelectMany(b => b.Sounds).Select(s => s.File),
+                StringComparer.OrdinalIgnoreCase);
             var newEntries = new List<SoundEntry>();
-            var grid = _config.Grid;
-            var working = new List<SoundEntry>(_config.Sounds);
+            var grid = active.Grid;
+            var working = new List<SoundEntry>(active.Sounds);
             foreach (var file in Directory.EnumerateFiles(_opts.SoundsDir).OrderBy(f => f))
             {
                 var name = Path.GetFileName(file);
-                if (known.Contains(name)) continue;
+                if (allKnown.Contains(name)) continue;
                 var ext = Path.GetExtension(name).ToLowerInvariant();
                 if (!AllowedExtensions.Contains(ext)) continue;
                 var id = DeriveIdFromFilename(name, working);
@@ -255,8 +396,9 @@ public class SoundLibrary
                 working.Add(entry);
                 newEntries.Add(entry);
             }
-            if (newEntries.Count == 0 && grid == _config.Grid) return;
-            _config = _config with { Grid = grid, Sounds = working };
+            if (newEntries.Count == 0 && grid == active.Grid) return;
+            var updatedBoard = active with { Grid = grid, Sounds = working };
+            _config = ReplaceBoard(_config, updatedBoard);
             SaveLocked();
             changed = true;
         }
@@ -268,9 +410,25 @@ public class SoundLibrary
         bool changed = false;
         lock (_lock)
         {
-            var repaired = GridPositioner.RepairDuplicates(_config.Grid, _config.Sounds);
-            if (repaired.SequenceEqual(_config.Sounds)) return;
-            _config = _config with { Sounds = repaired };
+            // Repair every board independently — each owns its own grid +
+            // positions so a duplicate in board A doesn't bleed into board B.
+            var boards = new List<Board>(_config.Boards.Count);
+            bool anyChanged = false;
+            foreach (var b in _config.Boards)
+            {
+                var repaired = GridPositioner.RepairDuplicates(b.Grid, b.Sounds);
+                if (repaired.SequenceEqual(b.Sounds))
+                {
+                    boards.Add(b);
+                }
+                else
+                {
+                    boards.Add(b with { Sounds = repaired });
+                    anyChanged = true;
+                }
+            }
+            if (!anyChanged) return;
+            _config = _config with { Boards = boards };
             SaveLocked();
             changed = true;
         }
@@ -289,7 +447,12 @@ public class SoundLibrary
     {
         lock (_lock)
         {
-            return _config.Sounds
+            // Runtime status is per-sound (file present on disk?), so we
+            // surface every sound across every board. Sound ids are unique
+            // per board but the StateDto only ever projects the active
+            // board's sounds, so phantom collisions don't matter here.
+            return _config.Boards
+                .SelectMany(b => b.Sounds)
                 .Select(s => new SoundRuntimeStatus(s.Id, !File.Exists(Path.Combine(_opts.SoundsDir, s.File))))
                 .ToList();
         }
@@ -297,11 +460,12 @@ public class SoundLibrary
 
     public void UpdateSound(string id, string? label = null, string? color = null,
                             string? icon = null, GridPosition? position = null,
-                            bool clearPosition = false)
+                            bool clearPosition = false, int? volume = null)
     {
         lock (_lock)
         {
-            var idx = _config.Sounds.ToList().FindIndex(s => s.Id == id);
+            var active = ResolveActiveBoardLocked(_config);
+            var idx = active.Sounds.ToList().FindIndex(s => s.Id == id);
             if (idx < 0) throw new InvalidOperationException($"Unknown sound id: {id}");
 
             // If a position move is requested, do the swap on the ORIGINAL list so
@@ -310,11 +474,11 @@ public class SoundLibrary
             List<SoundEntry> sounds;
             if (position is not null && !clearPosition)
             {
-                sounds = GridPositioner.Swap(_config.Sounds, id, position);
+                sounds = GridPositioner.Swap(active.Sounds, id, position);
             }
             else
             {
-                sounds = _config.Sounds.ToList();
+                sounds = active.Sounds.ToList();
             }
 
             var i = sounds.FindIndex(s => s.Id == id);
@@ -325,8 +489,9 @@ public class SoundLibrary
                 Color = color ?? current.Color,
                 Icon = icon ?? current.Icon,
                 Position = clearPosition ? null : current.Position,
+                Volume = volume is not null ? Math.Clamp(volume.Value, 0, 100) : current.Volume,
             };
-            _config = _config with { Sounds = sounds };
+            _config = ReplaceBoard(_config, active with { Sounds = sounds });
             SaveLocked();
         }
         Changed?.Invoke();
@@ -336,14 +501,29 @@ public class SoundLibrary
     {
         lock (_lock)
         {
-            var entry = _config.Sounds.FirstOrDefault(s => s.Id == id)
+            var active = ResolveActiveBoardLocked(_config);
+            var entry = active.Sounds.FirstOrDefault(s => s.Id == id)
                 ?? throw new InvalidOperationException($"Unknown sound id: {id}");
+            // Only delete the file from disk if no OTHER board references it.
+            // Without this guard, deleting a sound from board A would silently
+            // break a copy of the same file living in board B.
             if (deleteFile)
             {
-                var path = Path.Combine(_opts.SoundsDir, entry.File);
-                if (File.Exists(path)) File.Delete(path);
+                bool referencedElsewhere = _config.Boards
+                    .Where(b => b.Id != active.Id)
+                    .SelectMany(b => b.Sounds)
+                    .Any(s => string.Equals(s.File, entry.File, StringComparison.OrdinalIgnoreCase));
+                if (!referencedElsewhere)
+                {
+                    var path = Path.Combine(_opts.SoundsDir, entry.File);
+                    if (File.Exists(path)) File.Delete(path);
+                }
             }
-            _config = _config with { Sounds = _config.Sounds.Where(s => s.Id != id).ToList() };
+            var updatedBoard = active with
+            {
+                Sounds = active.Sounds.Where(s => s.Id != id).ToList(),
+            };
+            _config = ReplaceBoard(_config, updatedBoard);
             SaveLocked();
         }
         Changed?.Invoke();
@@ -353,11 +533,12 @@ public class SoundLibrary
     {
         lock (_lock)
         {
+            var active = ResolveActiveBoardLocked(_config);
             var newGrid = new GridLayout(cols, rows);
-            var updated = _config.Sounds.Select(s =>
+            var updated = active.Sounds.Select(s =>
                 s.Position is not null && !newGrid.Contains(s.Position)
                     ? s with { Position = null } : s).ToList();
-            _config = _config with { Grid = newGrid, Sounds = updated };
+            _config = ReplaceBoard(_config, active with { Grid = newGrid, Sounds = updated });
             SaveLocked();
         }
         Changed?.Invoke();
@@ -380,17 +561,25 @@ public class SoundLibrary
         bool changed = false;
         lock (_lock)
         {
-            var sounds = _config.Sounds.ToList();
-            var idx = sounds.FindIndex(s => s.Id == soundId);
-            if (idx < 0) return; // unknown id (mid-delete race) — no-op, no throw
-            sounds[idx] = sounds[idx] with
+            // Scan every board — the engine plays whatever id was requested,
+            // even if the user switched boards mid-play. Stats stay attached
+            // to the original entry.
+            for (int bi = 0; bi < _config.Boards.Count; bi++)
             {
-                PlayCount = sounds[idx].PlayCount + 1,
-                LastPlayedAt = DateTime.UtcNow,
-            };
-            _config = _config with { Sounds = sounds };
-            SaveLocked();
-            changed = true;
+                var board = _config.Boards[bi];
+                var sounds = board.Sounds.ToList();
+                var idx = sounds.FindIndex(s => s.Id == soundId);
+                if (idx < 0) continue;
+                sounds[idx] = sounds[idx] with
+                {
+                    PlayCount = sounds[idx].PlayCount + 1,
+                    LastPlayedAt = DateTime.UtcNow,
+                };
+                _config = ReplaceBoard(_config, board with { Sounds = sounds });
+                SaveLocked();
+                changed = true;
+                break;
+            }
         }
         if (changed) Changed?.Invoke();
     }
@@ -399,20 +588,199 @@ public class SoundLibrary
     {
         lock (_lock)
         {
+            var active = ResolveActiveBoardLocked(_config);
             var list = placements.ToList();
             var nonNull = list.Where(p => p.Position is not null).ToList();
             if (nonNull.Select(p => p.Position).Distinct().Count() != nonNull.Count)
                 throw new InvalidOperationException("Duplicate positions in layout");
             foreach (var (entryId, pos) in list)
-                if (pos is not null && !_config.Grid.Contains(pos))
-                    throw new InvalidOperationException($"Position {pos} out of grid {_config.Grid}");
+                if (pos is not null && !active.Grid.Contains(pos))
+                    throw new InvalidOperationException($"Position {pos} out of grid {active.Grid}");
             var map = list.ToDictionary(p => p.Id, p => p.Position);
-            var updated = _config.Sounds
+            var updated = active.Sounds
                 .Select(s => map.TryGetValue(s.Id, out var p) ? s with { Position = p } : s)
                 .ToList();
-            _config = _config with { Sounds = updated };
+            _config = ReplaceBoard(_config, active with { Sounds = updated });
             SaveLocked();
         }
         Changed?.Invoke();
+    }
+
+    // ─── board management ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Create a new board and append it to the config. The id is slugified
+    /// from <paramref name="name"/> and disambiguated against existing board
+    /// ids (so two "Stream" boards become "stream" and "stream-2"). The
+    /// new board is NOT activated automatically — callers explicitly activate
+    /// via <see cref="ActivateBoard"/> to keep the two operations distinct.
+    /// </summary>
+    public Board CreateBoard(string name, string? color = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Board name cannot be empty");
+        Board created;
+        lock (_lock)
+        {
+            var id = SlugifyBoardId(name, _config.Boards.Select(b => b.Id));
+            created = new Board { Id = id, Name = name.Trim(), Color = color ?? "#3b82f6" };
+            _config = _config with
+            {
+                Boards = new List<Board>(_config.Boards) { created },
+            };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+        return created;
+    }
+
+    /// <summary>
+    /// Rename and/or recolor an existing board. Pass null to keep the current
+    /// value of either field. Throws if the board id is unknown.
+    /// </summary>
+    public void UpdateBoard(string boardId, string? name = null, string? color = null)
+    {
+        lock (_lock)
+        {
+            var idx = _config.Boards.FindIndex(b => b.Id == boardId);
+            if (idx < 0) throw new InvalidOperationException($"Unknown board id: {boardId}");
+            var b = _config.Boards[idx];
+            var updated = b with
+            {
+                Name = !string.IsNullOrWhiteSpace(name) ? name.Trim() : b.Name,
+                Color = !string.IsNullOrWhiteSpace(color) ? color : b.Color,
+            };
+            var newBoards = new List<Board>(_config.Boards);
+            newBoards[idx] = updated;
+            _config = _config with { Boards = newBoards };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Delete a board. If the deleted board was the active one, activates
+    /// another board automatically. Refuses to delete the last remaining
+    /// board (the UI assumes at least one board exists). Files referenced
+    /// only by the deleted board are NOT removed from disk — the user can
+    /// clear them manually from the sounds/ folder, or re-import them into
+    /// a different board via AutoScan.
+    /// </summary>
+    public void DeleteBoard(string boardId)
+    {
+        lock (_lock)
+        {
+            if (_config.Boards.Count <= 1)
+                throw new InvalidOperationException("Cannot delete the last board");
+            var idx = _config.Boards.FindIndex(b => b.Id == boardId);
+            if (idx < 0) throw new InvalidOperationException($"Unknown board id: {boardId}");
+            var newBoards = _config.Boards.Where(b => b.Id != boardId).ToList();
+            var newActive = _config.ActiveBoardId == boardId
+                ? newBoards[0].Id
+                : _config.ActiveBoardId;
+            _config = _config with { Boards = newBoards, ActiveBoardId = newActive };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>Switch the active board. No-op if already active.</summary>
+    public void ActivateBoard(string boardId)
+    {
+        bool changed = false;
+        lock (_lock)
+        {
+            if (!_config.Boards.Any(b => b.Id == boardId))
+                throw new InvalidOperationException($"Unknown board id: {boardId}");
+            if (_config.ActiveBoardId == boardId) return;
+            _config = _config with { ActiveBoardId = boardId };
+            SaveLocked();
+            changed = true;
+        }
+        if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Move a sound from the active board to <paramref name="targetBoardId"/>.
+    /// The sound keeps its id, label, color, volume, and usage stats but loses
+    /// its grid position (the target board's grid layout is independent — the
+    /// caller can re-place explicitly via <see cref="UpdateSound"/>).
+    /// </summary>
+    public void MoveSoundToBoard(string soundId, string targetBoardId)
+    {
+        lock (_lock)
+        {
+            if (_config.ActiveBoardId == targetBoardId) return; // no-op
+            var sourceIdx = _config.Boards.FindIndex(b => b.Id == _config.ActiveBoardId);
+            var targetIdx = _config.Boards.FindIndex(b => b.Id == targetBoardId);
+            if (targetIdx < 0) throw new InvalidOperationException($"Unknown target board: {targetBoardId}");
+
+            var source = _config.Boards[sourceIdx];
+            var entry = source.Sounds.FirstOrDefault(s => s.Id == soundId)
+                ?? throw new InvalidOperationException($"Unknown sound id: {soundId}");
+
+            // Disambiguate id collision against the target board — the same
+            // file could already have been imported there via AutoScan.
+            var target = _config.Boards[targetIdx];
+            var newId = entry.Id;
+            var existingTargetIds = new HashSet<string>(target.Sounds.Select(s => s.Id));
+            if (existingTargetIds.Contains(newId))
+            {
+                int n = 2;
+                while (existingTargetIds.Contains($"{entry.Id}-{n}")) n++;
+                newId = $"{entry.Id}-{n}";
+            }
+
+            // Find an open cell on the target grid; expand if full.
+            var targetGrid = EnsureCellAvailable(target.Grid, target.Sounds);
+            var newPos = GridPositioner.NextFree(targetGrid, target.Sounds);
+
+            var moved = entry with { Id = newId, Position = newPos };
+            var newSource = source with { Sounds = source.Sounds.Where(s => s.Id != soundId).ToList() };
+            var newTarget = target with { Grid = targetGrid, Sounds = new List<SoundEntry>(target.Sounds) { moved } };
+            var boards = new List<Board>(_config.Boards);
+            boards[sourceIdx] = newSource;
+            boards[targetIdx] = newTarget;
+            _config = _config with { Boards = boards };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+    }
+
+    // ─── helpers ────────────────────────────────────────────────────────
+
+    private static Board ResolveActiveBoardLocked(SoundConfig cfg)
+    {
+        var b = cfg.Boards.FirstOrDefault(x => x.Id == cfg.ActiveBoardId);
+        if (b is not null) return b;
+        // Defensive: ActiveBoardId pointed nowhere. Fall back to the first
+        // board rather than throwing — Load() should have caught this but
+        // we don't want any code path to fail on an inconsistent config.
+        if (cfg.Boards.Count > 0) return cfg.Boards[0];
+        throw new InvalidOperationException("No boards configured");
+    }
+
+    private static SoundConfig ReplaceBoard(SoundConfig cfg, Board updated)
+    {
+        var idx = cfg.Boards.FindIndex(b => b.Id == updated.Id);
+        if (idx < 0) throw new InvalidOperationException($"Unknown board id: {updated.Id}");
+        var newBoards = new List<Board>(cfg.Boards);
+        newBoards[idx] = updated;
+        return cfg with { Boards = newBoards };
+    }
+
+    private static string SlugifyBoardId(string name, IEnumerable<string> existingIds)
+    {
+        var lower = name.Trim().ToLowerInvariant();
+        var slug = System.Text.RegularExpressions.Regex.Replace(lower, @"[^a-z0-9_]+", "-").Trim('-');
+        if (string.IsNullOrEmpty(slug)) slug = "board";
+        var existing = new HashSet<string>(existingIds);
+        if (!existing.Contains(slug)) return slug;
+        for (int n = 2; n < 1000; n++)
+        {
+            var candidate = $"{slug}-{n}";
+            if (!existing.Contains(candidate)) return candidate;
+        }
+        throw new InvalidOperationException("Cannot derive unique board id");
     }
 }

@@ -8,21 +8,27 @@ public class SoundConfigTests
     [Fact]
     public void Default_Has_Current_SchemaVersion()
     {
-        // Default is born under the current schema (v3: device fields hold
-        // WASAPI endpoint ids, sounds carry PlayCount + LastPlayedAt stats).
-        // The v1 → v2 and v2 → v3 migration paths are covered separately by
-        // SoundLibraryMigrationTests / SoundLibraryUsageStatsTests.
+        // Default is born under the current schema (v4: multi-board, with
+        // device fields holding WASAPI endpoint ids and SoundEntry carrying
+        // PlayCount + LastPlayedAt + Volume). The v1/v2/v3 → v4 migration
+        // paths are covered separately by SoundLibraryMigrationTests.
         var c = SoundConfig.Default();
-        c.SchemaVersion.Should().Be(3);
+        c.SchemaVersion.Should().Be(4);
         c.MonitorDevice.Should().BeNull();
         c.MonitorEnabled.Should().BeFalse();
         c.Volume.Should().Be(80);
         c.LatencyMs.Should().Be(50);
         c.Port.Should().Be(8080);
-        c.Grid.Cols.Should().Be(3);
-        c.Grid.Rows.Should().Be(4);
-        c.Sounds.Should().BeEmpty();
         c.AuthToken.Should().HaveLength(32);
+
+        // Multi-board: one default board called "Padrão" with a 3x4 grid,
+        // and ActiveBoardId pointed at it.
+        c.Boards.Should().HaveCount(1);
+        c.ActiveBoardId.Should().Be(c.Boards[0].Id);
+        c.Boards[0].Name.Should().Be("Padrão");
+        c.Boards[0].Grid.Cols.Should().Be(3);
+        c.Boards[0].Grid.Rows.Should().Be(4);
+        c.Boards[0].Sounds.Should().BeEmpty();
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public class PlayCommandTests : IDisposable
         var library = new SoundLibrary(new SoundLibraryOptions(_statTempDir));
         library.Load();
         library.AutoScan();
-        var id = library.Config.Sounds.Single().Id;
+        var id = library.ActiveBoard.Sounds.Single().Id;
 
         _factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<int>()))
             .Returns((string name, int lat) => { var p = new FakeWavePlayer(name); _players.Add(p); return p; });
@@ -121,10 +121,10 @@ public class PlayCommandTests : IDisposable
     {
         var (engine, library, id) = BuildWithLibrary();
         var soundsDir = Path.Combine(_statTempDir!, "sounds");
-        engine.Play(id, Path.Combine(soundsDir, library.Config.Sounds.Single().File));
+        engine.Play(id, Path.Combine(soundsDir, library.ActiveBoard.Sounds.Single().File));
         await Task.Delay(150); // drain the audio engine queue past the debounce check
 
-        var entry = library.Config.Sounds.Single(s => s.Id == id);
+        var entry = library.ActiveBoard.Sounds.Single(s => s.Id == id);
         entry.PlayCount.Should().Be(1);
         entry.LastPlayedAt.Should().NotBeNull();
         engine.Shutdown();

@@ -62,6 +62,11 @@ public class PlaybackEngine
     private readonly Dictionary<string, DateTime> _lastPlayedAt = new();
     private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(80);
 
+    // Per-sound volume cap for the currently-playing sound (0..1). Saved so
+    // mid-play SetVolume calls can rescale to effective = global * per-sound
+    // instead of stomping the per-sound ceiling.
+    private float _activePerSoundFactor = 1f;
+
     public event Action<string>? Playing;
     public event Action? Stopped;
     public event Action<bool>? MonitorChanged;
@@ -396,16 +401,20 @@ public class PlaybackEngine
 
         var token = Interlocked.Increment(ref _playToken);
         var cached = _cache.Get(cmd.FilePath);
-        var volume = _volume / 100f;
+        // Per-sound volume multiplier: pull it from the library if available,
+        // default to 1.0 (no attenuation) otherwise. Computed effective
+        // volume = global * per-sound, with global on the master slider.
+        _activePerSoundFactor = LookupPerSoundFactor(cmd.SoundId);
+        var effective = (_volume / 100f) * _activePerSoundFactor;
 
-        var gameSound = new SoundSampleProvider(cached, WorkingFormat, volume);
+        var gameSound = new SoundSampleProvider(cached, WorkingFormat, effective);
         gameSound.Finished += _ => _queue.Add(new PlaybackEndedCommand(token, IsGameStream: true));
         _gameMixer!.AddMixerInput((ISampleProvider)gameSound);
         _activeGameSound = gameSound;
 
         if (_monitorOutput is not null && _monitorMixer is not null)
         {
-            var monitorSound = new SoundSampleProvider(cached, WorkingFormat, volume);
+            var monitorSound = new SoundSampleProvider(cached, WorkingFormat, effective);
             monitorSound.Finished += _ => _queue.Add(new PlaybackEndedCommand(token, IsGameStream: false));
             _monitorMixer.AddMixerInput((ISampleProvider)monitorSound);
             _activeMonitorSound = monitorSound;
@@ -430,10 +439,33 @@ public class PlaybackEngine
     private void HandleVolume(int v)
     {
         _volume = Math.Clamp(v, 0, 100);
-        var f = _volume / 100f;
-        if (_activeGameSound is not null) _activeGameSound.Volume = f;
-        if (_activeMonitorSound is not null) _activeMonitorSound.Volume = f;
+        // Effective volume must re-multiply by the current per-sound factor so
+        // a sound with Volume=50 stays at half its slider position even when
+        // the user drags the master fader to 100.
+        var effective = (_volume / 100f) * _activePerSoundFactor;
+        if (_activeGameSound is not null) _activeGameSound.Volume = effective;
+        if (_activeMonitorSound is not null) _activeMonitorSound.Volume = effective;
         VolumeChanged?.Invoke(_volume);
+    }
+
+    /// <summary>
+    /// Look up the per-sound Volume (0..1) for <paramref name="soundId"/> by
+    /// scanning every board in the library. Returns 1.0 (no attenuation) when
+    /// no library is wired (unit tests) or the sound is not found.
+    /// </summary>
+    private float LookupPerSoundFactor(string soundId)
+    {
+        if (_library is null) return 1f;
+        try
+        {
+            foreach (var b in _library.Config.Boards)
+            {
+                var match = b.Sounds.FirstOrDefault(s => s.Id == soundId);
+                if (match is not null) return Math.Clamp(match.Volume, 0, 100) / 100f;
+            }
+        }
+        catch { /* never let a stat lookup crash playback */ }
+        return 1f;
     }
 
     private void HandleSetMonitorEnabled(bool b)

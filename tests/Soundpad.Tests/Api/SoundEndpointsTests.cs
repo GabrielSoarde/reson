@@ -37,8 +37,8 @@ public class SoundEndpointsTests : IClassFixture<TestingWebApplicationFactory>
         var c = Auth();
         // need two known sounds first
         var lib = _factory.Services.GetRequiredService<SoundLibrary>();
-        if (lib.Config.Sounds.Count < 2) { return; }
-        var ids = lib.Config.Sounds.Take(2).Select(s => s.Id).ToList();
+        if (lib.ActiveBoard.Sounds.Count < 2) { return; }
+        var ids = lib.ActiveBoard.Sounds.Take(2).Select(s => s.Id).ToList();
         var body = new
         {
             placements = new[]
@@ -58,7 +58,7 @@ public class SoundEndpointsTests : IClassFixture<TestingWebApplicationFactory>
         var r = await c.PostAsJsonAsync("/api/grid", new { cols = 4, rows = 5 });
         r.IsSuccessStatusCode.Should().BeTrue();
         var lib = _factory.Services.GetRequiredService<SoundLibrary>();
-        lib.Config.Grid.Cols.Should().Be(4);
-        lib.Config.Grid.Rows.Should().Be(5);
+        lib.ActiveBoard.Grid.Cols.Should().Be(4);
+        lib.ActiveBoard.Grid.Rows.Should().Be(5);
     }
 }

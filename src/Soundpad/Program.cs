@@ -242,7 +242,11 @@ if (!isTesting)
     var soundsDir = Path.Combine(rootDir, "sounds");
     _ = Task.Run(() =>
     {
-        var preload = library.Config.Sounds
+        // Preload spans every board — a frequently-played sound on an
+        // inactive board should still hit the cache the moment the user
+        // switches to that board.
+        var preload = library.Config.Boards
+            .SelectMany(b => b.Sounds)
             .Where(x => x.Position is not null)
             .OrderByDescending(x => x.LastPlayedAt ?? DateTime.MinValue)
             .ThenByDescending(x => x.PlayCount)

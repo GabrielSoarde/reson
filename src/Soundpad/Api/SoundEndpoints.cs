@@ -1,3 +1,4 @@
+using Soundpad.Api.Dto;
 using Soundpad.Models;
 using Soundpad.Sound;
 
@@ -37,7 +38,8 @@ public static class SoundEndpoints
             {
                 lib.UpdateSound(id,
                     label: body.Label, color: body.Color, icon: body.Icon,
-                    position: body.Position, clearPosition: body.ClearPosition ?? false);
+                    position: body.Position, clearPosition: body.ClearPosition ?? false,
+                    volume: body.Volume);
                 _ = hub.BroadcastAsync("libraryChanged", new { });
                 return Results.NoContent();
             }
@@ -49,6 +51,35 @@ public static class SoundEndpoints
             try
             {
                 lib.DeleteSound(id, deleteFile ?? false);
+                _ = hub.BroadcastAsync("libraryChanged", new { });
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+
+        // Per-sound volume — convenience endpoint so the WPF context menu (and
+        // mobile, eventually) can wire a single slider without doing the full
+        // PUT-with-every-field dance. Scoped to the active board, like the
+        // other sound-mutating endpoints.
+        g.MapPost("/sounds/{id}/volume", (string id, VolumeBody body, SoundLibrary lib, StateHub hub) =>
+        {
+            try
+            {
+                lib.UpdateSound(id, volume: Math.Clamp(body.Value, 0, 100));
+                _ = hub.BroadcastAsync("libraryChanged", new { });
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+
+        // Move a sound from the active board to another. Used by the WPF
+        // context menu "Mover para outro board" submenu. Idempotent if the
+        // target is already the active board.
+        g.MapPost("/sounds/{id}/move", (string id, MoveBody body, SoundLibrary lib, StateHub hub) =>
+        {
+            try
+            {
+                lib.MoveSoundToBoard(id, body.BoardId);
                 _ = hub.BroadcastAsync("libraryChanged", new { });
                 return Results.NoContent();
             }
@@ -73,10 +104,82 @@ public static class SoundEndpoints
             }
             catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
+
+        // ─── boards ──────────────────────────────────────────────────────
+
+        g.MapGet("/boards", (SoundLibrary lib) =>
+        {
+            var summaries = lib.Config.Boards
+                .Select(b => new BoardSummaryDto(b.Id, b.Name, b.Color))
+                .ToList();
+            return Results.Ok(new
+            {
+                boards = summaries,
+                activeBoardId = lib.Config.ActiveBoardId,
+            });
+        });
+
+        g.MapPost("/boards", (BoardCreateBody body, SoundLibrary lib, StateHub hub) =>
+        {
+            try
+            {
+                var b = lib.CreateBoard(body.Name, body.Color);
+                _ = hub.BroadcastAsync("boardsChanged", new { });
+                return Results.Created($"/api/boards/{b.Id}", new BoardSummaryDto(b.Id, b.Name, b.Color));
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+
+        g.MapPut("/boards/{id}", (string id, BoardUpdateBody body, SoundLibrary lib, StateHub hub) =>
+        {
+            try
+            {
+                lib.UpdateBoard(id, body.Name, body.Color);
+                _ = hub.BroadcastAsync("boardsChanged", new { });
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+
+        g.MapDelete("/boards/{id}", (string id, SoundLibrary lib, StateHub hub) =>
+        {
+            try
+            {
+                lib.DeleteBoard(id);
+                _ = hub.BroadcastAsync("boardsChanged", new { });
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
+
+        g.MapPost("/boards/{id}/activate", async (string id, SoundLibrary lib, StateHub hub, HttpContext http) =>
+        {
+            try
+            {
+                lib.ActivateBoard(id);
+                // Broadcast a typed event so WS-connected clients (WPF window,
+                // mobile, browser) can switch their view without round-tripping
+                // /api/state. libraryChanged also fires from Save() so legacy
+                // clients still get the update.
+                await hub.BroadcastAsync("activeBoardChanged", new { boardId = id }, OriginIdOf(http));
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+        });
     }
 
-    public record UpdateBody(string? Label, string? Color, string? Icon, GridPosition? Position, bool? ClearPosition);
+    private static string? OriginIdOf(HttpContext ctx)
+    {
+        var v = ctx.Request.Headers["X-Origin-Id"].FirstOrDefault();
+        return string.IsNullOrWhiteSpace(v) ? null : v;
+    }
+
+    public record UpdateBody(string? Label, string? Color, string? Icon, GridPosition? Position, bool? ClearPosition, int? Volume);
     public record GridBody(int Cols, int Rows);
     public record LayoutPlacement(string Id, GridPosition? Position);
     public record LayoutBody(List<LayoutPlacement> Placements);
+    public record VolumeBody(int Value);
+    public record MoveBody(string BoardId);
+    public record BoardCreateBody(string Name, string? Color = null);
+    public record BoardUpdateBody(string? Name, string? Color);
 }
