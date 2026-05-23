@@ -58,6 +58,10 @@ Name: "startup"; Description: "Iniciar o Soundpad com o Windows"; GroupDescripti
 [Files]
 ; The self-contained published output of `dotnet publish ... --self-contained -p:PublishSingleFile=true`
 Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\Soundpad.exe"; DestDir: "{app}"; Flags: ignoreversion
+; wwwroot is served by Kestrel for the phone web UI. PublishSingleFile bundles
+; assemblies but leaves static content as siblings - must ship them too or the
+; phone gets HTTP 500 on GET /.
+Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\sounds\*"; DestDir: "{app}\sounds"; Flags: ignoreversion recursesubdirs createallsubdirs onlyifdoesntexist
 
 #ifdef VBC_BUNDLED
