@@ -1,12 +1,19 @@
-; Soundpad installer (Inno Setup script)
+; Reson installer (Inno Setup script)
 ;
-; Builds SoundpadSetup.exe — a single installer that:
-;   - Installs Soundpad.exe + assets to Program Files\Soundpad
+; Builds ResonSetup.exe — a single installer that:
+;   - Installs Reson.exe + assets to Program Files\Reson
 ;   - Detects VB-Cable / VoiceMeeter; if missing, silent-installs the bundled
 ;     VBCABLE_Setup_x64.exe and prompts for reboot. If the bundle isn't present
 ;     at build time, falls back to opening the download page.
 ;   - Creates Start Menu shortcut and (optional) desktop shortcut
 ;   - Optional: start with Windows
+;
+; NOTE: this script + project were originally branded "Soundpad". The .csproj
+; filename and source namespace still say Soundpad (internal); the exe/window
+; titles/installer shipped to users say Reson. The Inno Setup AppId GUID below
+; is intentionally unchanged so existing Soundpad installs are recognised as
+; an upgrade-in-place by Windows and the user's installed/uninstall registry
+; entry gets renamed cleanly.
 ;
 ; To compile:
 ;   1. Install Inno Setup 6+ (https://jrsoftware.org/isdl.php)
@@ -14,11 +21,11 @@
 ;      so build.ps1 extracts it to installer\dependencies\vbcable\ for bundling.
 ;   3. Run `installer\build.ps1` from the repo root.
 
-#define MyAppName "Soundpad"
+#define MyAppName "Reson"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "AP2 QuantumSolutions"
 #define MyAppURL "https://vb-audio.com/Cable"
-#define MyAppExeName "Soundpad.exe"
+#define MyAppExeName "Reson.exe"
 
 ; Define VBC_BUNDLED if the extracted VB-Cable installer is present on disk.
 ; build.ps1 unzips installer\dependencies\VBCABLE_Driver_Pack.zip into
@@ -40,7 +47,9 @@ LicenseFile=
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
-OutputBaseFilename=SoundpadSetup
+OutputBaseFilename=ResonSetup
+SetupIconFile=..\assets\Reson.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -53,11 +62,11 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startup"; Description: "Iniciar o Soundpad com o Windows"; GroupDescription: "Inicialização:"; Flags: unchecked
+Name: "startup"; Description: "Iniciar o Reson com o Windows"; GroupDescription: "Inicialização:"; Flags: unchecked
 
 [Files]
 ; The self-contained published output of `dotnet publish ... --self-contained -p:PublishSingleFile=true`
-Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\Soundpad.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\Reson.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; wwwroot is served by Kestrel for the phone web UI. PublishSingleFile bundles
 ; assemblies but leaves static content as siblings - must ship them too or the
 ; phone gets HTTP 500 on GET /.
@@ -150,7 +159,7 @@ begin
         // The Windows driver-signing UAC prompt may still appear — that's a
         // Windows behavior we can't suppress, but the user only sees it once.
         VbcExe := ExpandConstant('{tmp}\vbcable\VBCABLE_Setup_x64.exe');
-        Msg := 'O Soundpad precisa de um cabo de áudio virtual para enviar som ao Discord/Valorant.' + #13#10#13#10 +
+        Msg := 'O Reson precisa de um cabo de áudio virtual para enviar som ao Discord/Valorant.' + #13#10#13#10 +
                'Vou instalar agora o VB-Cable (gratuito, da VB-Audio).' + #13#10 +
                'O Windows pode pedir confirmação para instalar o driver. Aceite para continuar.' + #13#10#13#10 +
                'IMPORTANTE: após a instalação será necessário reiniciar o Windows.';
@@ -161,7 +170,7 @@ begin
           begin
             VbcInstalledThisRun := True;
             MsgBox('VB-Cable instalado com sucesso!' + #13#10#13#10 +
-                   'Reinicie o Windows e abra o Soundpad — ele detectará o dispositivo automaticamente.' + #13#10 +
+                   'Reinicie o Windows e abra o Reson — ele detectará o dispositivo automaticamente.' + #13#10 +
                    'No Discord/Valorant, configure o microfone como "CABLE Output (VB-Audio Virtual Cable)".',
                    mbInformation, MB_OK);
           end
@@ -180,13 +189,13 @@ begin
         end;
       #else
         // Fallback path: no bundled installer, open the download page.
-        Msg := 'O Soundpad precisa de um cabo de áudio virtual (VB-Cable ou VoiceMeeter) para enviar som ao Discord/Valorant.' + #13#10#13#10 +
+        Msg := 'O Reson precisa de um cabo de áudio virtual (VB-Cable ou VoiceMeeter) para enviar som ao Discord/Valorant.' + #13#10#13#10 +
                'Nenhum foi detectado nesta máquina.' + #13#10#13#10 +
                'Deseja abrir a página de download do VB-Cable agora?';
         if MsgBox(Msg, mbConfirmation, MB_YESNO) = IDYES then
         begin
           ShellExec('open', 'https://vb-audio.com/Cable/', '', '', SW_SHOW, ewNoWait, ResultCode);
-          MsgBox('Após instalar o VB-Cable e reiniciar o Windows, abra o Soundpad novamente — ele detectará o dispositivo automaticamente.', mbInformation, MB_OK);
+          MsgBox('Após instalar o VB-Cable e reiniciar o Windows, abra o Reson novamente — ele detectará o dispositivo automaticamente.', mbInformation, MB_OK);
         end;
       #endif
     end;

@@ -40,8 +40,8 @@ public sealed class WpfTrayIcon : IDisposable
 
         _icon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
-            Text = $"Soundpad — {ip}:{_port}",
+            Icon = LoadResonIcon() ?? SystemIcons.Application,
+            Text = $"Reson — {ip}:{_port}",
             Visible = true,
         };
         var menu = new ContextMenuStrip();
@@ -76,6 +76,31 @@ public sealed class WpfTrayIcon : IDisposable
         catch (Exception ex)
         {
             Console.Error.WriteLine($"tray ShowMainWindow: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Load Reson.ico from the embedded WPF Resource (Soundpad.csproj declares
+    /// it under &lt;Resource&gt;). We open the pack URI stream and hand it to
+    /// the WinForms <see cref="Icon"/> constructor — this works under
+    /// PublishSingleFile=true because pack resources live in the assembly's
+    /// resource manifest, not as sibling files. Returns null on any failure;
+    /// caller falls back to <see cref="SystemIcons.Application"/>.
+    /// </summary>
+    private static Icon? LoadResonIcon()
+    {
+        try
+        {
+            var res = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Reson.ico", UriKind.Absolute));
+            if (res is null) return null;
+            using var s = res.Stream;
+            return new Icon(s);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"WpfTrayIcon.LoadResonIcon: {ex.Message}");
+            return null;
         }
     }
 

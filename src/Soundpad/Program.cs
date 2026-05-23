@@ -13,7 +13,7 @@ var isTesting = string.Equals(
     Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
     "Testing", StringComparison.OrdinalIgnoreCase);
 
-// User-writable data lives in %LOCALAPPDATA%\Soundpad\ (config.json + sounds/).
+// User-writable data lives in %LOCALAPPDATA%\Reson\ (config.json + sounds/).
 // The exe lives in Program Files which is read-only for non-admin processes —
 // trying to write config.json.tmp there raises UnauthorizedAccessException.
 // In Testing mode we keep rootDir = AppContext.BaseDirectory so test fixtures'
@@ -22,7 +22,32 @@ var rootDir = isTesting
     ? AppContext.BaseDirectory
     : Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Reson");
+
+// One-shot migration from the old "Soundpad" data folder. If Reson/ doesn't
+// exist yet but Soundpad/ does, copy everything (config.json + sounds/ + logs/)
+// so existing installs keep their library + auth token. We leave the legacy
+// folder in place — the user can delete it manually after confirming Reson
+// works as expected. Failures are non-fatal: app falls back to a fresh root.
+if (!isTesting)
+{
+    var legacyRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Soundpad");
+    if (!Directory.Exists(rootDir) && Directory.Exists(legacyRoot))
+    {
+        try
+        {
+            CopyDirectoryRecursive(legacyRoot, rootDir);
+            Console.WriteLine($"Migrated user data: {legacyRoot} -> {rootDir}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Legacy Soundpad data migration failed (non-fatal): {ex.Message}");
+        }
+    }
+}
+
 Directory.CreateDirectory(rootDir);
 Directory.CreateDirectory(Path.Combine(rootDir, "sounds"));
 
@@ -43,7 +68,7 @@ if (!isTesting)
     }
 }
 
-// Ensure %LOCALAPPDATA%\Soundpad\logs\ exists for the rolling file logger (skipped under Testing).
+// Ensure %LOCALAPPDATA%\Reson\logs\ exists for the rolling file logger (skipped under Testing).
 string? logDir = null;
 if (!isTesting)
 {
@@ -279,7 +304,7 @@ app.Lifetime.ApplicationStopping.Register(() =>
 
 if (!isTesting && adapter is not null)
 {
-    Console.WriteLine($"Soundpad rodando em http://{adapter.IPv4.First()}:{boundPort}/?t=<token-redacted>");
+    Console.WriteLine($"Reson rodando em http://{adapter.IPv4.First()}:{boundPort}/?t=<token-redacted>");
 }
 
 app.Run();
@@ -297,6 +322,30 @@ static int PickPort(int desired)
         catch (System.Net.Sockets.SocketException) { }
     }
     throw new InvalidOperationException($"No free port from {desired} to {desired + 9}");
+}
+
+// Recursive file+folder copy used only by the one-shot Soundpad -> Reson
+// data-folder migration on first launch. Skips entries that already exist
+// at the destination so a partially-completed migration doesn't clobber
+// fresh data.
+static void CopyDirectoryRecursive(string src, string dst)
+{
+    Directory.CreateDirectory(dst);
+    foreach (var dir in Directory.EnumerateDirectories(src))
+    {
+        var name = Path.GetFileName(dir);
+        CopyDirectoryRecursive(dir, Path.Combine(dst, name));
+    }
+    foreach (var file in Directory.EnumerateFiles(src))
+    {
+        var name = Path.GetFileName(file);
+        var target = Path.Combine(dst, name);
+        if (!File.Exists(target))
+        {
+            try { File.Copy(file, target, overwrite: false); }
+            catch { /* best effort */ }
+        }
+    }
 }
 
 public partial class Program { }

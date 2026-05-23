@@ -1,6 +1,8 @@
-# Soundpad
+# Reson
 
-Soundpad para Windows, controlado pelo celular via Wi-Fi. Toca sons dentro do Valorant, Discord, TeamSpeak — qualquer app que enxergue um microfone.
+Reson para Windows, controlado pelo celular via Wi-Fi. Toca sons dentro do Valorant, Discord, TeamSpeak — qualquer app que enxergue um microfone.
+
+> Histórico: o projeto começou com o nome interno "Soundpad" e mantém esse nome no `Soundpad.csproj` / `namespace Soundpad.*` para evitar churn de refatoração. O binário publicado, instalador, ícones e UI são todos "Reson".
 
 ## Pré-requisitos
 
@@ -28,11 +30,11 @@ Ou build self-contained:
 dotnet publish src/Soundpad -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
-Soundpad.exe vai aparecer em `src/Soundpad/bin/Release/net8.0-windows/win-x64/publish/`.
+`Reson.exe` vai aparecer em `src/Soundpad/bin/Release/net8.0-windows/win-x64/publish/`.
 
 ## Uso
 
-1. Rodar `Soundpad.exe`. Tray icon aparece.
+1. Rodar `Reson.exe`. Tray icon aparece.
 2. Direito no tray → "Mostrar QR code".
 3. Escanear no celular → abre a grade no browser.
 4. (No celular) configurar **Settings → Monitor device** = seu fone (se quiser ouvir).
@@ -41,7 +43,9 @@ Soundpad.exe vai aparecer em `src/Soundpad/bin/Release/net8.0-windows/win-x64/pu
 
 ## Configuração
 
-`config.json` (no mesmo diretório do .exe) é gerado no primeiro boot. Pode editar manualmente quando o app está parado.
+`config.json` em `%LOCALAPPDATA%\Reson\` é gerado no primeiro boot. Pode editar manualmente quando o app está parado.
+
+Na primeira execução após o rebrand Soundpad→Reson, o app migra automaticamente o conteúdo de `%LOCALAPPDATA%\Soundpad\` para `%LOCALAPPDATA%\Reson\` (preserva config + sons + logs). A pasta antiga fica intacta; pode ser apagada manualmente depois que confirmar que tudo funciona.
 
 Campos relevantes:
 - `port`: padrão 8080 (auto-fallback se ocupado).
@@ -52,4 +56,4 @@ Campos relevantes:
 
 ## Logs
 
-`%LOCALAPPDATA%\Soundpad\logs\soundpad-YYYY-MM-DD-N.log` — rolling diário + por tamanho (10MB) + retenção 7 dias.
+`%LOCALAPPDATA%\Reson\logs\soundpad-YYYY-MM-DD-N.log` — rolling diário + por tamanho (10MB) + retenção 7 dias.

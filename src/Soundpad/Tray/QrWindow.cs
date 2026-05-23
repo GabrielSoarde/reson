@@ -8,9 +8,10 @@ public class QrWindow : Form
 {
     public QrWindow(string url)
     {
-        Text = "Soundpad — QR";
+        Text = "Reson — QR";
         Size = new Size(380, 420);
         StartPosition = FormStartPosition.CenterScreen;
+        TrySetFormIcon();
 
         using var g = new QRCodeGenerator();
         using var data = g.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
@@ -23,5 +24,28 @@ public class QrWindow : Form
         var lbl = new Label { Text = url, Dock = DockStyle.Bottom, Height = 32, TextAlign = ContentAlignment.MiddleCenter };
         Controls.Add(pb);
         Controls.Add(lbl);
+    }
+
+    /// <summary>
+    /// Pull Reson.ico from the embedded WPF resource manifest. The pack scheme
+    /// requires a WPF Application to be initialized first; under our runtime
+    /// model (WpfHost starts the Application before any QrWindow opens) this is
+    /// always true. Best-effort: a missing icon falls back to the default WinForms
+    /// title-bar glyph.
+    /// </summary>
+    private void TrySetFormIcon()
+    {
+        try
+        {
+            var res = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Reson.ico", UriKind.Absolute));
+            if (res is null) return;
+            using var s = res.Stream;
+            Icon = new Icon(s);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"QrWindow.TrySetFormIcon: {ex.Message}");
+        }
     }
 }

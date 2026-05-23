@@ -1,9 +1,13 @@
-# Soundpad - build script
+# Reson - build script
 #
 # Steps:
 #   1. dotnet publish (self-contained single-file Win x64)
 #   2. Compile Soundpad.iss with Inno Setup ISCC
-# Output: dist\SoundpadSetup.exe
+# Output: dist\ResonSetup.exe
+#
+# NOTE: csproj filename + namespace still say "Soundpad" (internal); the
+# published assembly ships as Reson.exe via <AssemblyName>Reson</AssemblyName>
+# in src/Soundpad/Soundpad.csproj.
 #
 # Requires:
 #   - .NET 8 SDK
@@ -14,9 +18,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $repoRoot
 
-Write-Host "==> Stopping any running Soundpad.exe (avoids file lock during publish)..."
-Get-Process -Name 'Soundpad' -ErrorAction SilentlyContinue | ForEach-Object {
-    Write-Host "    Killing PID $($_.Id)"
+# Kill any currently-running instance (Reson.exe is the current name; we also
+# probe Soundpad.exe so legacy installs that were left running during the
+# rebrand build don't lock the publish output).
+Write-Host "==> Stopping any running Reson.exe / Soundpad.exe (avoids file lock during publish)..."
+Get-Process -Name 'Reson','Soundpad' -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "    Killing PID $($_.Id) ($($_.ProcessName))"
     $_ | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 Start-Sleep -Milliseconds 500
@@ -24,13 +31,13 @@ Start-Sleep -Milliseconds 500
 Write-Host "==> Cleaning previous publish output..."
 Remove-Item -Recurse -Force "src\Soundpad\bin\Release\net8.0-windows\win-x64\publish" -ErrorAction SilentlyContinue
 
-Write-Host "==> Publishing Soundpad (self-contained, single file, win-x64)..."
+Write-Host "==> Publishing Reson (self-contained, single file, win-x64)..."
 dotnet publish src\Soundpad -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 $publishDir = "src\Soundpad\bin\Release\net8.0-windows\win-x64\publish"
-if (-not (Test-Path "$publishDir\Soundpad.exe")) {
-  throw "Publish output not found at $publishDir\Soundpad.exe"
+if (-not (Test-Path "$publishDir\Reson.exe")) {
+  throw "Publish output not found at $publishDir\Reson.exe"
 }
 Write-Host "    Published to: $publishDir"
 
@@ -68,7 +75,7 @@ Write-Host "==> Compiling installer..."
 & $iscc "installer\Soundpad.iss"
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
 
-$setupExe = "dist\SoundpadSetup.exe"
+$setupExe = "dist\ResonSetup.exe"
 if (Test-Path $setupExe) {
   $sizeMb = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
   Write-Host ""

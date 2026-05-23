@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <!-- WinExe = no console window when launched from a shortcut.
-         Logs still go to %LOCALAPPDATA%\Soundpad\logs\ via the rolling file
+         Logs still go to %LOCALAPPDATA%\Reson\logs\ via the rolling file
          provider. If you launch from a terminal for debugging, Console.WriteLine
          output is still attached to that terminal. -->
     <OutputType>WinExe</OutputType>
@@ -11,6 +11,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Soundpad</RootNamespace>
+    <!-- User-facing rebrand: csproj filename + namespace stay "Soundpad" (internal),
+         but the assembly/exe ships as Reson.exe and the EXE/window icons come from
+         assets/Reson.ico. -->
+    <AssemblyName>Reson</AssemblyName>
+    <ApplicationIcon>..\..\assets\Reson.ico</ApplicationIcon>
     <!--
       WPF SDK auto-detects App.xaml/MainWindow.xaml and synthesizes an entry point.
       We use top-level statements in Program.cs as the entry point and build the
@@ -44,5 +49,16 @@
       the AutoScan finds nothing to register.
     -->
     <None Include="..\..\sounds\**\*.*" Link="sounds\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Embed the Reson icon as a WPF Resource so MainWindow / SettingsWindow
+      and the tray icon can load it via pack URI
+      ("pack://application:,,,/Reson.ico"). Resources are baked into the
+      assembly's resource manifest, so this works under
+      PublishSingleFile=true (the single-file bootstrap inlines the
+      assembly) without shipping the .ico as a sibling file.
+    -->
+    <Resource Include="..\..\assets\Reson.ico" Link="Reson.ico" />
   </ItemGroup>
 </Project>

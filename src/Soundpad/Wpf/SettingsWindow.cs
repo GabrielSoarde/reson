@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Soundpad.Audio;
 using Soundpad.Sound;
 using Brushes = System.Windows.Media.Brushes;
@@ -83,7 +84,7 @@ internal sealed class SettingsWindow : Window
         _initialMicId = cfg.MicDevice;
         _initialMonitorEnabled = cfg.MonitorEnabled;
 
-        Title = "Soundpad — Configurações";
+        Title = "Reson — Configurações";
         Width = 560;
         Height = 460;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -91,6 +92,14 @@ internal sealed class SettingsWindow : Window
         Background = new SolidColorBrush(BgColor);
         Foreground = Brushes.White;
         FontFamily = new System.Windows.Media.FontFamily("Segoe UI");
+
+        // Reson icon on the settings dialog title bar too — consistent with
+        // MainWindow and avoids a generic alt-tab thumbnail.
+        try
+        {
+            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Reson.ico", UriKind.Absolute));
+        }
+        catch { /* fall back to default WPF icon */ }
 
         BuildLayout();
         PopulateDevices();
@@ -120,7 +129,7 @@ internal sealed class SettingsWindow : Window
         _gameCombo = NewCombo();
         stack.Children.Add(BuildSection(
             "Dispositivo de saída (Discord/Valorant)",
-            "O Soundpad envia o som para este dispositivo. Use um cabo virtual (VB-Cable / VoiceMeeter) para que o Discord o escute como microfone.",
+            "O Reson envia o som para este dispositivo. Use um cabo virtual (VB-Cable / VoiceMeeter) para que o Discord o escute como microfone.",
             _gameCombo));
 
         // Mic device.
@@ -408,7 +417,7 @@ internal sealed class SettingsWindow : Window
         {
             System.Windows.MessageBox.Show(
                 "Falha ao aplicar configurações:\n" + ex.Message,
-                "Soundpad",
+                "Reson",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
         }
@@ -459,7 +468,7 @@ internal sealed class SettingsWindow : Window
         {
             System.Windows.MessageBox.Show(
                 $"Erro de rede ao chamar {path}:\n{ex.Message}",
-                "Soundpad",
+                "Reson",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
             return false;
@@ -480,7 +489,7 @@ internal sealed class SettingsWindow : Window
         {
             System.Windows.MessageBox.Show(
                 $"Erro de rede ao chamar /api/monitor:\n{ex.Message}",
-                "Soundpad",
+                "Reson",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
             return false;
@@ -503,12 +512,12 @@ internal sealed class SettingsWindow : Window
             (System.Net.HttpStatusCode.BadRequest, var b) when b.Contains("unknown_device") =>
                 "Dispositivo não reconhecido — talvez ele tenha sido desconectado. Feche e reabra as configurações.",
             (System.Net.HttpStatusCode.Unauthorized, _) =>
-                "Falha de autenticação ao acessar a API local. Reinicie o Soundpad.",
+                "Falha de autenticação ao acessar a API local. Reinicie o Reson.",
             _ => $"Erro ({(int)status}) em {path}:\n{body}",
         };
         System.Windows.MessageBox.Show(
             message,
-            "Soundpad",
+            "Reson",
             System.Windows.MessageBoxButton.OK,
             System.Windows.MessageBoxImage.Warning);
     }

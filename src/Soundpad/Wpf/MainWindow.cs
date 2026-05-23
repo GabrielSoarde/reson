@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using Soundpad.Audio;
 using Soundpad.Models;
@@ -26,7 +27,7 @@ using VerticalAlignment = System.Windows.VerticalAlignment;
 namespace Soundpad.Wpf;
 
 /// <summary>
-/// Native Soundpad window — the PC twin of the phone web UI.
+/// Native Reson window — the PC twin of the phone web UI.
 ///
 /// Threading: WPF Dispatcher (STA). All engine/library events that arrive on
 /// background threads (audio engine loop, Kestrel request threads) must be
@@ -66,7 +67,7 @@ public sealed class MainWindow : Window
         _locator = locator;
         _port = port;
 
-        Title = "Soundpad";
+        Title = "Reson";
         Width = 900;
         Height = 650;
         MinWidth = 480;
@@ -76,6 +77,7 @@ public sealed class MainWindow : Window
         FontFamily = new FontFamily("Segoe UI");
         Foreground = Brushes.White;
         UseLayoutRounding = true;
+        TrySetWindowIcon();
 
         BuildLayout();
         RebuildGrid();
@@ -102,6 +104,29 @@ public sealed class MainWindow : Window
         Loaded += (_, _) => WarnIfNoAudioDevice();
     }
 
+    /// <summary>
+    /// Load Reson.ico from the embedded WPF resource manifest and apply it as
+    /// the window icon (title bar + alt-tab + taskbar). The .ico is shipped as
+    /// a <Resource> in the csproj, which works under PublishSingleFile=true
+    /// because the resource manifest is part of the assembly itself. Failures
+    /// are swallowed — without an icon WPF falls back to the default app glyph,
+    /// which is annoying but not fatal.
+    /// </summary>
+    private void TrySetWindowIcon()
+    {
+        try
+        {
+            // Resource pack URI: app:,,, scheme + the Link path from the
+            // <Resource> ItemGroup in Soundpad.csproj.
+            var uri = new Uri("pack://application:,,,/Reson.ico", UriKind.Absolute);
+            Icon = BitmapFrame.Create(uri);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"MainWindow.TrySetWindowIcon: {ex.Message}");
+        }
+    }
+
     // Note: when MicDevice in the config is null, the engine uses the system
     // default capture device. The first-run warning below only complains about
     // a missing virtual cable for the OUTPUT side; the mic side falls back
@@ -124,7 +149,7 @@ public sealed class MainWindow : Window
             var pickNow = System.Windows.MessageBox.Show(
                 "Nenhum dispositivo de saída está configurado, mas há dispositivos disponíveis no sistema.\n\n" +
                 "Deseja abrir as configurações agora para escolher um?",
-                "Soundpad — escolha um dispositivo",
+                "Reson — escolha um dispositivo",
                 System.Windows.MessageBoxButton.YesNo,
                 System.Windows.MessageBoxImage.Question);
             if (pickNow == System.Windows.MessageBoxResult.Yes)
@@ -136,9 +161,9 @@ public sealed class MainWindow : Window
 
         var result = System.Windows.MessageBox.Show(
             "Nenhum cabo de áudio virtual foi detectado.\n\n" +
-            "O Soundpad precisa de VB-Cable ou VoiceMeeter instalado para enviar som ao Discord/Valorant.\n\n" +
+            "O Reson precisa de VB-Cable ou VoiceMeeter instalado para enviar som ao Discord/Valorant.\n\n" +
             "Deseja abrir a página de download do VB-Cable agora?",
-            "Soundpad — dispositivo de áudio ausente",
+            "Reson — dispositivo de áudio ausente",
             System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Warning);
         if (result == System.Windows.MessageBoxResult.Yes)
@@ -178,7 +203,7 @@ public sealed class MainWindow : Window
         };
         var titleText = new TextBlock
         {
-            Text = "Soundpad",
+            Text = "Reson",
             FontSize = 20,
             FontWeight = FontWeights.SemiBold,
             Foreground = Brushes.White,
@@ -330,7 +355,7 @@ public sealed class MainWindow : Window
         {
             System.Windows.MessageBox.Show(
                 $"Não foi possível abrir as configurações:\n{ex.Message}",
-                "Soundpad",
+                "Reson",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
         }

@@ -1,15 +1,17 @@
-# Soundpad installer
+# Reson installer
 
-Builds `dist/SoundpadSetup.exe` — a Windows installer that:
+Builds `dist/ResonSetup.exe` — a Windows installer that:
 
-- Installs Soundpad to `Program Files\Soundpad`
+- Installs Reson to `Program Files\Reson`
 - Detects VB-Cable / VoiceMeeter; if neither is installed, prompts the user to download VB-Cable
 - Creates Start Menu and optional Desktop shortcuts
-- Optional: starts Soundpad with Windows
+- Optional: starts Reson with Windows
+
+> The Inno Setup script filename is still `Soundpad.iss` (matches the source `Soundpad.csproj` — internal naming kept stable to avoid churn). All user-visible strings inside the script say "Reson".
 
 ## Pre-requisites
 
-1. **.NET 8 SDK** — to compile and publish Soundpad
+1. **.NET 8 SDK** — to compile and publish Reson
 2. **Inno Setup 6+** — to compile the installer. Free, download from <https://jrsoftware.org/isdl.php>
 
 ## Build
@@ -20,11 +22,11 @@ From the repo root in PowerShell:
 .\installer\build.ps1
 ```
 
-This runs `dotnet publish` (self-contained single-file win-x64) then invokes ISCC. Output: `dist\SoundpadSetup.exe` (~180 MB — includes the .NET runtime).
+This runs `dotnet publish` (self-contained single-file win-x64) then invokes ISCC. Output: `dist\ResonSetup.exe` (~180 MB — includes the .NET runtime).
 
 ## How VB-Cable is handled
 
-The default script (`Soundpad.iss`) **does not bundle** VB-Cable's installer — it just checks the Windows registry for "VB-Cable" or "VoiceMeeter" under `HKLM\...\Uninstall`. If neither is found, it pops a dialog offering to open the VB-Cable download page in the browser. The user installs VB-Cable manually, reboots, and the Soundpad picks it up on next launch.
+The default script (`Soundpad.iss`) **does not bundle** VB-Cable's installer — it just checks the Windows registry for "VB-Cable" or "VoiceMeeter" under `HKLM\...\Uninstall`. If neither is found, it pops a dialog offering to open the VB-Cable download page in the browser. The user installs VB-Cable manually, reboots, and Reson picks it up on next launch.
 
 ### Optional: bundle the VB-Cable installer
 
@@ -43,14 +45,14 @@ The current script does not auto-extract+install the ZIP (you'd need to add an `
 
 The script ships an initial `sounds/` folder with whatever was in the publish output. Files use `onlyifdoesntexist` so re-installing doesn't clobber user's existing sounds.
 
-After install, the user's `sounds/` folder lives at `Program Files\Soundpad\sounds\`. They drop new MP3s there and the app auto-scans on next boot.
+After install, the user's `sounds/` folder lives at `%LOCALAPPDATA%\Reson\sounds\`. They drop new MP3s there and the app auto-scans on next boot.
 
 ## Test the installer
 
 After build:
 
 ```powershell
-.\dist\SoundpadSetup.exe
+.\dist\ResonSetup.exe
 ```
 
-Walk through the wizard, confirm install, click "Iniciar o Soundpad" at the end. The tray icon and WPF window should appear.
+Walk through the wizard, confirm install, click "Iniciar o Reson" at the end. The tray icon and WPF window should appear.
