@@ -112,7 +112,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
-            errorBuilder: (context, error) {
+            errorBuilder: (context, error, child) {
               // Permission denied / no camera / etc. Provide a manual fallback.
               return _PermissionError(
                 onManual: () => Navigator.of(context).pop(false),
