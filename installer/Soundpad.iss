@@ -61,10 +61,11 @@ Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\Soundpad.exe
 Source: "..\src\Soundpad\bin\Release\net8.0-windows\win-x64\publish\sounds\*"; DestDir: "{app}\sounds"; Flags: ignoreversion recursesubdirs createallsubdirs onlyifdoesntexist
 
 #ifdef VBC_BUNDLED
-; Bundle the VB-Audio Virtual Cable installer (donationware; bundling allowed).
-; Dropped into a temp dir during install, run silently, then cleaned up.
-Source: "dependencies\vbcable\VBCABLE_Setup_x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
-Source: "dependencies\vbcable\VBCABLE_License_Agreement.txt"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; Bundle the entire VB-Audio Virtual Cable installer folder (donationware;
+; bundling allowed). VBCABLE_Setup_x64.exe is just a launcher - it requires
+; the .inf / .sys / .cat driver files to live next to it at install time, so
+; we ship the whole extracted folder into a temp subdirectory.
+Source: "dependencies\vbcable\*"; DestDir: "{tmp}\vbcable"; Flags: deleteafterinstall recursesubdirs createallsubdirs
 #endif
 
 [Icons]
@@ -144,7 +145,7 @@ begin
         // Bundled path: run VBCABLE_Setup_x64.exe silently.
         // The Windows driver-signing UAC prompt may still appear — that's a
         // Windows behavior we can't suppress, but the user only sees it once.
-        VbcExe := ExpandConstant('{tmp}\VBCABLE_Setup_x64.exe');
+        VbcExe := ExpandConstant('{tmp}\vbcable\VBCABLE_Setup_x64.exe');
         Msg := 'O Soundpad precisa de um cabo de áudio virtual para enviar som ao Discord/Valorant.' + #13#10#13#10 +
                'Vou instalar agora o VB-Cable (gratuito, da VB-Audio).' + #13#10 +
                'O Windows pode pedir confirmação para instalar o driver. Aceite para continuar.' + #13#10#13#10 +
