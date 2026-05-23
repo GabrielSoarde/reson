@@ -1,4 +1,4 @@
-# Soundpad — build script
+# Soundpad - build script
 #
 # Steps:
 #   1. dotnet publish (self-contained single-file Win x64)
@@ -35,7 +35,7 @@ if (-not (Test-Path "$publishDir\Soundpad.exe")) {
 Write-Host "    Published to: $publishDir"
 
 # Extract VB-Cable bundle if present so Inno Setup can include the .exe directly.
-# (Skipping if the ZIP isn't there is fine — Soundpad.iss falls back to the
+# (Skipping if the ZIP isn't there is fine - Soundpad.iss falls back to the
 # "open download page" path it already had.)
 $vbcZip = "installer\dependencies\VBCABLE_Driver_Pack.zip"
 $vbcDir = "installer\dependencies\vbcable"
@@ -48,7 +48,7 @@ if (Test-Path $vbcZip) {
   }
   Write-Host "    Extracted to: $vbcDir"
 } else {
-  Write-Host "==> VB-Cable ZIP not found at $vbcZip — installer will use download-page fallback"
+  Write-Host "==> VB-Cable ZIP not found at $vbcZip - installer will use download-page fallback"
   if (Test-Path $vbcDir) { Remove-Item -Recurse -Force $vbcDir }
 }
 
