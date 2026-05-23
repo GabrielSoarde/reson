@@ -6,6 +6,16 @@ using Soundpad.Network;
 using Soundpad.Sound;
 using Soundpad.Wpf;
 
+// Velopack bootstrap — MUST be the very first thing the process does, before any
+// other code, args parsing, or file I/O. VelopackApp.Run() intercepts the special
+// install / update / uninstall / firstrun hooks Velopack passes on the command
+// line (the updater re-invokes Reson.exe with these), performs the requested
+// action, and then exits the process. In a normal user launch it's a near-instant
+// no-op and returns so the app boots as usual. It is also a no-op under `dotnet
+// run` / the old Inno install (no Velopack metadata present), so it's always safe
+// to call unconditionally — including under the Testing environment.
+Velopack.VelopackApp.Build().Run();
+
 // Detect the Testing environment (set by WebApplicationFactory in integration tests)
 // BEFORE any side effects so we can skip port binding, adapter detection, file writes,
 // and tray UI that would race with concurrent test fixtures.

@@ -30,6 +30,7 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="NAudio.Vorbis" Version="1.5.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Soundpad.Tests" />
@@ -52,6 +53,20 @@
       the AutoScan finds nothing to register.
     -->
     <None Include="..\..\sounds\**\*.*" Link="sounds\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Bundle the VB-Cable driver installer next to Reson.exe so the app can run
+      its first-run driver install (Velopack replaces the old Inno installer
+      which used to do this). The whole extracted folder ships because
+      VBCABLE_Setup_x64.exe needs its sibling .inf/.sys/.cat files at run time.
+      Only copied to the *publish* output (vpk packs the publish dir) — there's
+      no need to drag ~5 MB of driver files into every `dotnet build` / test run.
+      If installer\dependencies\vbcable\ is absent (the ZIP wasn't extracted),
+      this item simply matches nothing and the first-run dialog falls back to
+      the VB-Cable download page.
+    -->
+    <None Include="..\..\installer\dependencies\vbcable\**\*.*" Link="vbcable\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!--

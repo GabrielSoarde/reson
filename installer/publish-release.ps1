@@ -1,19 +1,27 @@
 # Reson - one-command release publisher
 #
-# Bumps the version everywhere, builds the desktop installer + Android APK,
-# tags the commit, and creates a GitHub Release with both artifacts attached.
-# Everyone running an older version then auto-updates (desktop + Android both
-# poll GitHub Releases on launch).
+# Bumps the version everywhere, builds the Velopack desktop release + Android
+# APK, tags the commit, and publishes a GitHub Release.
+#
+#   - DESKTOP: `vpk upload github` publishes the Velopack release (the *.nupkg +
+#     releases.win.json + RELEASES + ResonApp-win-Setup.exe). Velopack's
+#     GithubSource update feed reads those assets, so installed clients pull the
+#     delta in the background and apply it seamlessly on restart (no UAC).
+#   - ANDROID: the APK is attached to the SAME release/tag via `gh release upload`
+#     (the Android updater is unchanged — it downloads Reson-Android.apk).
 #
 # Usage (from repo root, PowerShell):
-#   .\installer\publish-release.ps1 -Version 1.0.1 -Notes "Volume individual + boards"
+#   .\installer\publish-release.ps1 -Version 1.0.3 -Notes "Velopack auto-update"
 #
-# Requires: .NET 8 SDK, Inno Setup 6+, Flutter, and `gh` authenticated as the
-# repo owner (GabrielSoarde).
+# Requires: .NET 8 SDK, vpk CLI (`dotnet tool install -g vpk`), Flutter, and
+# `gh` authenticated as the repo owner (GabrielSoarde). `vpk upload github` needs
+# a GitHub token — we pass `gh auth token`.
 #
-# Asset names are fixed (the updaters look for these exact names):
-#   ResonSetup.exe      <- desktop updater downloads this
+# Fixed asset name the Android updater looks for:
 #   Reson-Android.apk   <- Android updater downloads this
+# (The desktop no longer downloads a named installer; Velopack's manifest drives
+#  it. ResonSetup.exe / ResonApp-win-Setup.exe is only the FIRST-INSTALL artifact
+#  for brand-new / migrating users.)
 
 param(
     [Parameter(Mandatory = $true)] [string]$Version,
@@ -87,12 +95,13 @@ Invoke-Git add $appVer $csproj $iss $pubspec
 Invoke-Git commit -m "release: $Version"
 Invoke-Git tag $tag
 
-# --- 3. Build desktop installer -------------------------------------------
+# --- 3. Build desktop Velopack release ------------------------------------
 
-Write-Host "==> Building desktop installer..." -ForegroundColor Cyan
-& "$repoRoot\installer\build.ps1"
-$setupExe = "dist\ResonSetup.exe"
-if (-not (Test-Path $setupExe)) { throw "Desktop installer not produced." }
+Write-Host "==> Building desktop Velopack release..." -ForegroundColor Cyan
+& "$repoRoot\installer\build.ps1" -Version $Version
+$releasesDir = "dist\velopack"
+$setupExe = Join-Path $releasesDir "ResonApp-win-Setup.exe"
+if (-not (Test-Path $setupExe)) { throw "Velopack Setup.exe not produced ($setupExe)." }
 
 # --- 4. Build Android APK -------------------------------------------------
 
@@ -113,17 +122,50 @@ if (-not (Test-Path $apkSrc)) { throw "APK not produced." }
 $apkDist = "dist\Reson-Android.apk"
 Copy-Item $apkSrc $apkDist -Force
 
-# --- 5. Push + create the GitHub Release ----------------------------------
+# --- 5. Push commit + tag -------------------------------------------------
 
-Write-Host "==> Pushing and creating GitHub release..." -ForegroundColor Cyan
+Write-Host "==> Pushing commit + tag..." -ForegroundColor Cyan
 Invoke-Git push origin master
 Invoke-Git push origin $tag
 
 if ([string]::IsNullOrWhiteSpace($Notes)) { $Notes = "Reson $Version" }
-gh release create $tag $setupExe $apkDist --title "Reson $Version" --notes $Notes
-if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
+
+# --- 6. Publish the Velopack release to GitHub Releases -------------------
+# `vpk upload github` creates the release (tag v$Version) and attaches ALL the
+# Velopack assets the GithubSource feed needs (*.nupkg, releases.win.json,
+# RELEASES, ResonApp-win-Setup.exe). It needs a token — reuse the gh login.
+
+Write-Host "==> Publishing Velopack release to GitHub..." -ForegroundColor Cyan
+$ghToken = (gh auth token).Trim()
+if ([string]::IsNullOrWhiteSpace($ghToken)) { throw "Could not get a GitHub token from 'gh auth token'." }
+
+$vpk = (Get-Command vpk -ErrorAction SilentlyContinue).Source
+if (-not $vpk) {
+    $candidate = Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe"
+    if (Test-Path $candidate) { $vpk = $candidate }
+}
+if (-not $vpk) { throw "vpk CLI not found. Install it with:  dotnet tool install -g vpk" }
+
+# Match build.ps1: roll forward if the .NET 9 runtime vpk targets is absent.
+$hasNet9 = (& dotnet --list-runtimes) -match 'Microsoft\.NETCore\.App 9\.'
+if (-not $hasNet9) { $env:DOTNET_ROLL_FORWARD = 'Major' }
+
+& $vpk upload github `
+    --repoUrl "https://github.com/GabrielSoarde/reson" `
+    --publish `
+    --releaseName "Reson $Version" `
+    --tag $tag `
+    --outputDir $releasesDir `
+    --token $ghToken
+if ($LASTEXITCODE -ne 0) { throw "vpk upload github failed (exit $LASTEXITCODE)" }
+
+# --- 7. Attach the Android APK to the same release ------------------------
+Write-Host "==> Attaching Android APK to release $tag..." -ForegroundColor Cyan
+gh release upload $tag $apkDist --clobber
+if ($LASTEXITCODE -ne 0) { throw "gh release upload (APK) failed (exit $LASTEXITCODE)" }
 
 Write-Host ""
 Write-Host "==> Released Reson $Version" -ForegroundColor Green
 Write-Host "    https://github.com/GabrielSoarde/reson/releases/tag/$tag"
-Write-Host "    Desktop + Android clients on older versions will be prompted to update on next launch."
+Write-Host "    Velopack-installed desktop clients pull the delta in the background and"
+Write-Host "    apply it seamlessly on restart. Android clients update via the APK."

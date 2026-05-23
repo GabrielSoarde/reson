@@ -1,6 +1,13 @@
-; Reson installer (Inno Setup script)
+; Reson installer (Inno Setup script) — DEPRECATED / LEGACY
 ;
-; Builds ResonSetup.exe — a single installer that:
+; As of the Velopack migration this Inno script is NO LONGER part of the build.
+; The desktop now ships as a Velopack per-user app: `installer\build.ps1` runs
+; `vpk pack` (see that script) and updates apply seamlessly with no UAC. VB-Cable
+; is installed from the app's first run (Soundpad.Audio.VbCableInstaller), not by
+; an installer. This file is kept only for historical reference / emergency
+; fallback. Do not expect it to be wired into the current build or publish flow.
+;
+; (Historical) Builds ResonSetup.exe — a single installer that:
 ;   - Installs Reson.exe + assets to Program Files\Reson
 ;   - Detects VB-Cable / VoiceMeeter; if missing, silent-installs the bundled
 ;     VBCABLE_Setup_x64.exe and prompts for reboot. If the bundle isn't present

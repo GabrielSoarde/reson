@@ -136,11 +136,12 @@ public sealed class MainWindow : Window
 
         Loaded += (_, _) =>
         {
-            WarnIfNoAudioDevice();
+            EnsureAudioBridgeOrOfferInstall();
             // Fire-and-forget update check — never blocks startup, never throws.
-            // CheckAndPromptAsync swallows network errors and only prompts when a
-            // strictly-newer release with a ResonSetup.exe asset exists.
-            _ = UpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: true);
+            // Velopack downloads the delta in the background, then prompts once
+            // to restart. No UAC, no installer wizard. Swallows all errors and
+            // is a silent no-op for non-Velopack (old Inno) installs.
+            _ = VelopackUpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: true);
         };
     }
 
@@ -149,7 +150,7 @@ public sealed class MainWindow : Window
     /// result even when up to date / offline, unlike the silent startup check.
     /// </summary>
     public void CheckForUpdatesManually()
-        => _ = UpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: false);
+        => _ = VelopackUpdatePrompter.CheckAndPromptAsync(this, silentWhenUpToDate: false);
 
     /// <summary>
     /// Load Reson.ico from the embedded WPF resource manifest and apply it as
@@ -168,14 +169,28 @@ public sealed class MainWindow : Window
         }
     }
 
-    private void WarnIfNoAudioDevice()
+    /// <summary>
+    /// First-run audio-bridge check. If the user already picked an output device,
+    /// or a virtual cable (VoiceMeeter / VB-Cable) is already present, this is a
+    /// no-op. Otherwise it offers to install the bundled VB-Cable driver — the
+    /// one operation that still needs admin, elevated once via UAC. This replaces
+    /// the VB-Cable logic that used to live in the Inno installer's
+    /// <c>CurStepChanged</c> hook (Velopack no longer runs an installer with
+    /// admin rights).
+    /// </summary>
+    private void EnsureAudioBridgeOrOfferInstall()
     {
         if (!string.IsNullOrEmpty(_library.Config.AudioDevice)) return;
+
+        // Already have a virtual cable? Then we just need the user to pick it
+        // (or auto-detect already did). Fall through to the device picker below.
+        string? bridge = null;
+        try { bridge = _locator.FindVirtualAudioBridge(); } catch { /* enumeration failed */ }
 
         IReadOnlyList<AudioDeviceInfo> outs;
         try { outs = _locator.EnumerateRenderDevices(); } catch { outs = Array.Empty<AudioDeviceInfo>(); }
 
-        if (outs.Count > 0)
+        if (bridge is not null || outs.Count > 0)
         {
             var pickNow = System.Windows.MessageBox.Show(
                 "Nenhum dispositivo de saída está configurado, mas há dispositivos disponíveis no sistema.\n\n" +
@@ -190,6 +205,44 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // No virtual cable and no output devices → offer the first-run VB-Cable
+        // driver install. Prefer the bundled installer (one UAC prompt); fall back
+        // to the download page only if it wasn't bundled in this build.
+        if (Soundpad.Audio.VbCableInstaller.CanInstallBundled)
+        {
+            var install = System.Windows.MessageBox.Show(
+                "O Reson precisa do VB-Cable para enviar som ao Discord/Valorant.\n\n" +
+                "Instalar agora? (pedirá permissão de administrador — apenas desta vez, " +
+                "só para o driver de áudio.)",
+                "Reson — instalar VB-Cable",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (install != System.Windows.MessageBoxResult.Yes) return;
+
+            bool ok;
+            try { ok = Soundpad.Audio.VbCableInstaller.RunBundledInstaller(); }
+            catch { ok = false; }
+
+            if (ok)
+            {
+                System.Windows.MessageBox.Show(
+                    "VB-Cable instalado com sucesso!\n\n" +
+                    "Reinicie o Windows e abra o Reson — ele detectará o dispositivo " +
+                    "automaticamente.\n" +
+                    "No Discord/Valorant, escolha o microfone \"CABLE Output (VB-Audio Virtual Cable)\".",
+                    "Reson", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(
+                    "Não consegui instalar o VB-Cable (a instalação pode ter sido cancelada).\n\n" +
+                    "Você pode instalá-lo manualmente em https://vb-audio.com/Cable/ e abrir o Reson de novo.",
+                    "Reson", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            }
+            return;
+        }
+
+        // No bundled installer in this build → download-page fallback.
         var result = System.Windows.MessageBox.Show(
             "Nenhum cabo de áudio virtual foi detectado.\n\n" +
             "O Reson precisa de VB-Cable ou VoiceMeeter instalado para enviar som ao Discord/Valorant.\n\n" +
@@ -199,15 +252,7 @@ public sealed class MainWindow : Window
             System.Windows.MessageBoxImage.Warning);
         if (result == System.Windows.MessageBoxResult.Yes)
         {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "https://vb-audio.com/Cable/",
-                    UseShellExecute = true,
-                });
-            }
-            catch { /* user can navigate manually */ }
+            Soundpad.Audio.VbCableInstaller.OpenDownloadPage();
         }
     }
 
