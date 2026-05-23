@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- WinExe = no console window when launched from a shortcut.
+         Logs still go to %LOCALAPPDATA%\Soundpad\logs\ via the rolling file
+         provider. If you launch from a terminal for debugging, Console.WriteLine
+         output is still attached to that terminal. -->
+    <OutputType>WinExe</OutputType>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
