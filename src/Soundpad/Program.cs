@@ -204,16 +204,25 @@ if (!isTesting)
     }
 }
 
-// Preload positioned sounds into the LRU cache on a background task so the
-// first tap of a button is hitch-free. Best-effort: missing files and decode
-// errors are swallowed silently — the per-Play decode path will surface them.
+// Preload the user's most-used sounds into the LRU cache on a background
+// task so the first tap of a frequently-pressed button is hitch-free.
+// Ordering: most recently played first (LastPlayedAt desc, nulls last),
+// then most played (PlayCount desc). Cap at 10 entries so a long tail of
+// rarely-used sounds doesn't churn the SoundCache on every boot.
+// Best-effort: missing files and decode errors are swallowed silently —
+// the per-Play decode path will surface them.
 if (!isTesting)
 {
     var cache = app.Services.GetRequiredService<SoundCache>();
     var soundsDir = Path.Combine(rootDir, "sounds");
     _ = Task.Run(() =>
     {
-        foreach (var s in library.Config.Sounds.Where(x => x.Position is not null))
+        var preload = library.Config.Sounds
+            .Where(x => x.Position is not null)
+            .OrderByDescending(x => x.LastPlayedAt ?? DateTime.MinValue)
+            .ThenByDescending(x => x.PlayCount)
+            .Take(10);
+        foreach (var s in preload)
         {
             var path = Path.Combine(soundsDir, s.File);
             if (!File.Exists(path)) continue;

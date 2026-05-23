@@ -8,7 +8,10 @@ public record SoundConfig
     // stable WASAPI endpoint ids ({0.0.0.x}.{guid}) instead of FriendlyNames.
     // SoundLibrary.Load migrates v1 configs in place (resolves names to ids
     // via DeviceLocator on first launch after upgrade).
-    public int SchemaVersion { get; init; } = 2;
+    // v2 → v3 (2026-05): SoundEntry gains PlayCount + LastPlayedAt usage
+    // stats. Pure schema bump — new fields default to 0 / null via record
+    // initializers, so existing v2 entries deserialize cleanly.
+    public int SchemaVersion { get; init; } = 3;
     public string AuthToken { get; init; } = "";
     public int Port { get; init; } = 8080;
     public string? PreferredNetworkAdapter { get; init; }

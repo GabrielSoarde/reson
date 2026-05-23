@@ -8,11 +8,12 @@ public class SoundConfigTests
     [Fact]
     public void Default_Has_Current_SchemaVersion()
     {
-        // Default is born under the current schema (v2: device fields hold
-        // WASAPI endpoint ids instead of FriendlyNames). The v1 → v2 path is
-        // covered separately by SoundLibraryMigrationTests.
+        // Default is born under the current schema (v3: device fields hold
+        // WASAPI endpoint ids, sounds carry PlayCount + LastPlayedAt stats).
+        // The v1 → v2 and v2 → v3 migration paths are covered separately by
+        // SoundLibraryMigrationTests / SoundLibraryUsageStatsTests.
         var c = SoundConfig.Default();
-        c.SchemaVersion.Should().Be(2);
+        c.SchemaVersion.Should().Be(3);
         c.MonitorDevice.Should().BeNull();
         c.MonitorEnabled.Should().BeFalse();
         c.Volume.Should().Be(80);

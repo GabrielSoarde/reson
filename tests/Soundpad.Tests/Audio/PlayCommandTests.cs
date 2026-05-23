@@ -2,14 +2,24 @@ using FluentAssertions;
 using Moq;
 using NAudio.Wave;
 using Soundpad.Audio;
+using Soundpad.Sound;
 
 namespace Soundpad.Tests.Audio;
 
-public class PlayCommandTests
+public class PlayCommandTests : IDisposable
 {
     private readonly Mock<IWavePlayerFactory> _factory = new();
     private readonly Mock<ISoundDecoder> _decoder = new();
     private readonly List<FakeWavePlayer> _players = new();
+    private string? _statTempDir;
+
+    public void Dispose()
+    {
+        if (_statTempDir is not null)
+        {
+            try { Directory.Delete(_statTempDir, recursive: true); } catch { }
+        }
+    }
 
     private PlaybackEngine Build()
     {
@@ -22,6 +32,33 @@ public class PlayCommandTests
         engine.SetGameDevice("VoiceMeeter Input");
         engine.Start();
         return engine;
+    }
+
+    /// <summary>
+    /// Build an engine wired to a real SoundLibrary backed by a temp dir.
+    /// Lets us assert that HandlePlay's RecordPlay call actually updates
+    /// PlayCount on the library. Disposed via the class IDisposable.
+    /// </summary>
+    private (PlaybackEngine Engine, SoundLibrary Library, string SoundId) BuildWithLibrary()
+    {
+        _statTempDir = Path.Combine(Path.GetTempPath(), "soundpad-engine-stats-" + Guid.NewGuid());
+        Directory.CreateDirectory(_statTempDir);
+        Directory.CreateDirectory(Path.Combine(_statTempDir, "sounds"));
+        File.WriteAllBytes(Path.Combine(_statTempDir, "sounds", "a.mp3"), new byte[10]);
+        var library = new SoundLibrary(new SoundLibraryOptions(_statTempDir));
+        library.Load();
+        library.AutoScan();
+        var id = library.Config.Sounds.Single().Id;
+
+        _factory.Setup(f => f.Create(It.IsAny<string>(), It.IsAny<int>()))
+            .Returns((string name, int lat) => { var p = new FakeWavePlayer(name); _players.Add(p); return p; });
+        _decoder.Setup(d => d.Decode(It.IsAny<string>()))
+            .Returns(new CachedSound(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2), new byte[4096]));
+        var cache = new SoundCache(_decoder.Object, 50);
+        var engine = new PlaybackEngine(_factory.Object, cache, new FakeMicCapture(), library);
+        engine.SetGameDevice("VoiceMeeter Input");
+        engine.Start();
+        return (engine, library, id);
     }
 
     [Fact]
@@ -76,6 +113,20 @@ public class PlayCommandTests
         engine.Play("a", "a.mp3");
         await Task.Delay(100);
         _players[0].ManagedThreadIdAtInit.Should().Be(_players[0].ManagedThreadIdAtPlay);
+        engine.Shutdown();
+    }
+
+    [Fact]
+    public async Task Play_Records_Usage_Stat()
+    {
+        var (engine, library, id) = BuildWithLibrary();
+        var soundsDir = Path.Combine(_statTempDir!, "sounds");
+        engine.Play(id, Path.Combine(soundsDir, library.Config.Sounds.Single().File));
+        await Task.Delay(150); // drain the audio engine queue past the debounce check
+
+        var entry = library.Config.Sounds.Single(s => s.Id == id);
+        entry.PlayCount.Should().Be(1);
+        entry.LastPlayedAt.Should().NotBeNull();
         engine.Shutdown();
     }
 }

@@ -7,9 +7,12 @@ namespace Soundpad.Sound;
 
 public class SoundLibrary
 {
-    // Bumped to 2: device fields hold endpoint ids instead of FriendlyNames.
-    // See MigrateDeviceIdentifiers below for the v1 → v2 transformation.
-    private const int CurrentSchemaVersion = 2;
+    // Bumped to 3: SoundEntry gained PlayCount + LastPlayedAt usage stats.
+    // v1 → v2 migration: device fields hold endpoint ids instead of
+    // FriendlyNames — see MigrateDeviceIdentifiers below.
+    // v2 → v3 migration: pure schema bump — happens automatically inside
+    // Load() since the new SoundEntry fields default to 0 / null.
+    private const int CurrentSchemaVersion = 3;
     private readonly SoundLibraryOptions _opts;
     private readonly object _lock = new();
     private SoundConfig _config = SoundConfig.Default();
@@ -50,6 +53,17 @@ public class SoundLibrary
                 throw new NotSupportedException(
                     $"config.json schemaVersion {loaded.SchemaVersion} is newer than supported {CurrentSchemaVersion}");
             _config = loaded;
+
+            // v2 → v3 auto-migration: pure schema bump (new SoundEntry fields
+            // default to 0 / null via record initializers). The v1 → v2 device
+            // migration still happens separately in MigrateDeviceIdentifiers
+            // because it needs an IAudioDeviceEnumerator. Bumping the schema
+            // version here makes the file roundtrip cleanly on next save.
+            if (_config.SchemaVersion == 2)
+            {
+                _config = _config with { SchemaVersion = 3 };
+                SaveLocked();
+            }
         }
     }
 
@@ -84,7 +98,10 @@ public class SoundLibrary
 
             var migrated = _config with
             {
-                SchemaVersion = 2,
+                // Jump straight to current schema (v3). v2 → v3 is a pure
+                // bump (new SoundEntry fields default to 0 / null) so we
+                // don't need a separate pass after the device translation.
+                SchemaVersion = CurrentSchemaVersion,
                 AudioDevice = Translate(_config.AudioDevice),
                 MonitorDevice = Translate(_config.MonitorDevice),
                 MicDevice = Translate(_config.MicDevice),
@@ -344,6 +361,38 @@ public class SoundLibrary
             SaveLocked();
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Record a successful play of <paramref name="soundId"/>: increment
+    /// <see cref="SoundEntry.PlayCount"/> and stamp
+    /// <see cref="SoundEntry.LastPlayedAt"/> = <c>DateTime.UtcNow</c>, then
+    /// persist + raise <see cref="Changed"/>. Called by
+    /// <see cref="Audio.PlaybackEngine"/> from inside HandlePlay after the
+    /// debounce check, so phantom plays during library mutations (delete in
+    /// flight, etc.) won't crash — an unknown id is a no-op.
+    ///
+    /// Thread-safe via the existing <c>_lock</c>. The engine's 80 ms debounce
+    /// naturally caps the write frequency from mic-spam scenarios.
+    /// </summary>
+    public void RecordPlay(string soundId)
+    {
+        bool changed = false;
+        lock (_lock)
+        {
+            var sounds = _config.Sounds.ToList();
+            var idx = sounds.FindIndex(s => s.Id == soundId);
+            if (idx < 0) return; // unknown id (mid-delete race) — no-op, no throw
+            sounds[idx] = sounds[idx] with
+            {
+                PlayCount = sounds[idx].PlayCount + 1,
+                LastPlayedAt = DateTime.UtcNow,
+            };
+            _config = _config with { Sounds = sounds };
+            SaveLocked();
+            changed = true;
+        }
+        if (changed) Changed?.Invoke();
     }
 
     public void ApplyLayout(IEnumerable<(string Id, GridPosition? Position)> placements)

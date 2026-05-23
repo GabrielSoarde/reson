@@ -2,7 +2,12 @@ using Soundpad.Models;
 
 namespace Soundpad.Api.Dto;
 
-public record SoundEntryDto(string Id, string File, string Label, string Color, string? Icon, GridPosition? Position, bool Missing);
+public record SoundEntryDto(
+    string Id, string File, string Label, string Color, string? Icon, GridPosition? Position, bool Missing,
+    // Schema v3 usage stats. PlayCount is the total accepted Plays for this
+    // sound (server-authoritative; no client-side mutation endpoint).
+    // LastPlayedAt is UTC ISO-8601 — the frontend localizes.
+    int PlayCount = 0, DateTime? LastPlayedAt = null);
 
 /// <summary>
 /// State emitted to the WPF window and phone web UI.

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using Soundpad.Sound;
 
 namespace Soundpad.Audio;
 
@@ -25,6 +26,11 @@ public class PlaybackEngine
     private readonly IWavePlayerFactory _factory;
     private readonly SoundCache _cache;
     private readonly IMicCapture _mic;
+    // Optional: when present (DI injects it in production), each accepted
+    // Play records a usage stat tick. Null in unit tests that build the
+    // engine via the legacy 2-/3-arg constructors — those don't need stat
+    // tracking and would otherwise need a temp library + tempdir per fixture.
+    private readonly SoundLibrary? _library;
     private readonly BlockingCollection<AudioCommand> _queue = new();
     private Thread? _thread;
 
@@ -64,13 +70,22 @@ public class PlaybackEngine
     public event Action<Exception>? MicError;
 
     public PlaybackEngine(IWavePlayerFactory factory, SoundCache cache)
-        : this(factory, cache, new WasapiMicCapture()) { }
+        : this(factory, cache, new WasapiMicCapture(), library: null) { }
 
     public PlaybackEngine(IWavePlayerFactory factory, SoundCache cache, IMicCapture mic)
+        : this(factory, cache, mic, library: null) { }
+
+    // Production constructor — DI passes the SoundLibrary so each accepted
+    // Play is reflected in per-sound PlayCount / LastPlayedAt stats.
+    public PlaybackEngine(IWavePlayerFactory factory, SoundCache cache, SoundLibrary library)
+        : this(factory, cache, new WasapiMicCapture(), library) { }
+
+    public PlaybackEngine(IWavePlayerFactory factory, SoundCache cache, IMicCapture mic, SoundLibrary? library)
     {
         _factory = factory;
         _cache = cache;
         _mic = mic;
+        _library = library;
         _mic.CaptureError += ex => MicError?.Invoke(ex);
     }
 
@@ -364,6 +379,12 @@ public class PlaybackEngine
             return;
         }
         _lastPlayedAt[cmd.SoundId] = now;
+
+        // Record usage stats (PlayCount + LastPlayedAt) BEFORE we start the
+        // pipeline work so a stat tick is persisted even if pipeline build
+        // fails. RecordPlay is a no-op for unknown ids (delete-in-flight race)
+        // and tolerates a null library (unit-test construction path).
+        _library?.RecordPlay(cmd.SoundId);
 
         EnsureGamePipeline();
         EnsureMicRunning();

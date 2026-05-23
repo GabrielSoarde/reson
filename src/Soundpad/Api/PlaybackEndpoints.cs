@@ -17,7 +17,8 @@ public static class PlaybackEndpoints
             var statuses = lib.GetRuntimeStatuses().ToDictionary(s => s.Id, s => s.Missing);
             var entries = lib.Config.Sounds.Select(s => new SoundEntryDto(
                 s.Id, s.File, s.Label, s.Color, s.Icon, s.Position,
-                statuses.TryGetValue(s.Id, out var m) && m)).ToList();
+                statuses.TryGetValue(s.Id, out var m) && m,
+                s.PlayCount, s.LastPlayedAt)).ToList();
             return new StateDto(
                 lib.Config.AudioDevice, lib.Config.MonitorDevice, lib.Config.MonitorEnabled,
                 loc.EnumerateRenderDeviceNames(),
