@@ -479,7 +479,7 @@ public class NormalizationPlaybackTests : IDisposable
     [Fact]
     public async Task First_Play_Computes_And_Persists_NormalizeGain()
     {
-        var (engine, lib, _) = Build(0.05f);          // quiet clip → positive gain expected
+        var (engine, lib, _) = Build(0.01f);          // 0.01 DC → -40 dBFS → wants +20, capped at +12
         var up = lib.Upload("a.mp3", new MemoryStream(new byte[10]));
         engine.Play(up.Entry.Id, Path.Combine(_tempDir, "sounds", up.FinalFilename));
 
@@ -492,7 +492,7 @@ public class NormalizationPlaybackTests : IDisposable
     [Fact]
     public async Task Normalize_Disabled_Does_Not_Compute_Gain()
     {
-        var (engine, lib, _) = Build(0.05f, normalize: false);
+        var (engine, lib, _) = Build(0.01f, normalize: false);
         var up = lib.Upload("b.mp3", new MemoryStream(new byte[10]));
         engine.Play(up.Entry.Id, Path.Combine(_tempDir, "sounds", up.FinalFilename));
         await Task.Delay(200); // brief settle — asserting a NON-event
@@ -503,7 +503,7 @@ public class NormalizationPlaybackTests : IDisposable
     [Fact]
     public async Task Volume_Change_Mid_Play_Preserves_Normalization()
     {
-        var (engine, lib, players) = Build(0.05f);
+        var (engine, lib, players) = Build(0.01f);
         var up = lib.Upload("c.mp3", new MemoryStream(new byte[10]));
         engine.Play(up.Entry.Id, Path.Combine(_tempDir, "sounds", up.FinalFilename));
         await WaitUntil(() => engine.ActiveGameEffectiveVolumeForTests is not null);
@@ -833,5 +833,5 @@ git commit -m "feat(mobile): global normalize-volume toggle"
 ## Notes for the implementer
 
 - **Per-sound normalize UI is deferred.** F1 ships only the *global* toggle. A per-sound "renormalize / override" control is a later enhancement (could fold into the F2 editor). The per-sound gain is computed automatically; users don't manage it individually in v1.
-- **First-play timing:** the gain is computed on the audio thread during the first `HandlePlay` of each sound. It's a single pass over an in-memory float array (a few ms for a short clip) — acceptable. The persist (`SetNormalizeGainDb` → `SaveLocked`) also happens there, consistent with the existing `RecordPlay` persist in the same handler.
+- **First-play timing:** the gain is *computed* on the audio thread during the first `HandlePlay` of each sound — a single pass over an in-memory float array (a few ms for a short clip), and the computed value is applied to that play immediately. The *persist* (`SetNormalizeGainDb` → `SaveLocked`, which does disk I/O) is **dispatched off the audio thread via `Task.Run`** (see Task 4 Step 3), so the synchronous file write never blocks playback. This is deliberately *not* the same pattern as the existing `RecordPlay` persist (which still writes on the audio thread — a pre-existing issue out of scope here); F1 does not copy that pattern, it avoids it.
 - **Recompute:** if a user replaces a file but keeps the entry, the stored gain is stale. Out of scope for F1; the F2 editor (which creates trim metadata) is the natural place to add a "recompute normalization" action later.
