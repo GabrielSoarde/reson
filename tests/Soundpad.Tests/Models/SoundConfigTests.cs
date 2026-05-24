@@ -8,7 +8,7 @@ public class SoundConfigTests
     [Fact]
     public void Default_Has_Current_SchemaVersion()
     {
-        // Default is born under the current schema (v4: multi-board, with
+        // Default is born under the current schema (v5: multi-board + normalization, with
         // device fields holding WASAPI endpoint ids and SoundEntry carrying
         // PlayCount + LastPlayedAt + Volume). The v1/v2/v3/v4 → v5 migration
         // paths are covered separately by SoundLibraryMigrationTests.
@@ -16,6 +16,7 @@ public class SoundConfigTests
         c.SchemaVersion.Should().Be(5);
         c.MonitorDevice.Should().BeNull();
         c.MonitorEnabled.Should().BeFalse();
+        c.NormalizeEnabled.Should().BeTrue();
         c.Volume.Should().Be(80);
         c.LatencyMs.Should().Be(50);
         c.Port.Should().Be(8080);
