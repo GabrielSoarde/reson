@@ -69,4 +69,18 @@ public class LoudnessAnalyzerTests
         var db = LoudnessAnalyzer.ComputeGainDb(SinePcm(0.5f), channels: 2, targetDb: -20, maxBoostDb: 12);
         db.Should().BeApproximately(-10.97, 0.5);
     }
+
+    [Fact]
+    public void NonFinite_Samples_Return_Zero_Gain()
+    {
+        // A malformed decoded clip could produce NaN or Inf samples. Because the
+        // resulting gain is persisted to config.json and fed into DbToLinear, a
+        // non-finite result would silently break the sound permanently.
+        var samples = new float[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, 0f };
+        var bytes = new byte[samples.Length * 4];
+        Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+
+        LoudnessAnalyzer.ComputeGainDb(bytes, channels: 2, targetDb: -20, maxBoostDb: 12)
+            .Should().Be(0.0);
+    }
 }

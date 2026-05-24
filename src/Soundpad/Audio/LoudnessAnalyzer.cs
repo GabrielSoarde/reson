@@ -25,7 +25,11 @@ public static class LoudnessAnalyzer
             sumSquares += (double)s * s;
         }
         double rms = Math.Sqrt(sumSquares / sampleCount);
-        if (rms <= 1e-6) return 0.0; // effectively silence — don't amplify
+        // Non-finite (NaN/Inf from a malformed clip) or effectively silent → no
+        // change. NaN compares false to everything, so guard it explicitly: this
+        // value is persisted and fed into the volume multiplier, where a NaN would
+        // silently break the sound.
+        if (!double.IsFinite(rms) || rms <= 1e-6) return 0.0;
 
         double rmsDb = 20.0 * Math.Log10(rms);
         double gain = targetDb - rmsDb;
