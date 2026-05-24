@@ -35,7 +35,7 @@ public class AuthTokenMiddleware
             supplied = ctx.WebSockets.WebSocketRequestedProtocols
                 .FirstOrDefault(p => !string.Equals(p, WsAuthMarker, StringComparison.Ordinal));
         }
-        supplied ??= ctx.Request.Query["t"].FirstOrDefault(); // deprecated fallback (skew safety)
+        supplied ??= ctx.WebSockets.IsWebSocketRequest ? ctx.Request.Query["t"].FirstOrDefault() : null; // deprecated /ws-only fallback (skew safety)
 
         if (supplied is null || !TokensMatch(supplied, _library.Config.AuthToken))
         {
