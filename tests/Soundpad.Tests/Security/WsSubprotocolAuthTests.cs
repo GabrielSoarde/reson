@@ -35,7 +35,21 @@ public class WsSubprotocolAuthTests : IClassFixture<TestingWebApplicationFactory
         wsClient.ConfigureRequest = req =>
             req.Headers["Sec-WebSocket-Protocol"] = "reson.auth.v1, deadbeef";
         var act = async () => await wsClient.ConnectAsync(new Uri(_factory.Server.BaseAddress, "ws"), default);
-        await act.Should().ThrowAsync<Exception>();   // 401 → handshake fails
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .Where(e => e.Message.Contains("401"));  // 401 → handshake fails
+    }
+
+    [Fact]
+    public async Task Ws_Rejects_Marker_Only_No_Token()
+    {
+        var wsClient = _factory.Server.CreateWebSocketClient();
+        wsClient.ConfigureRequest = req =>
+            req.Headers["Sec-WebSocket-Protocol"] = "reson.auth.v1"; // marker, but NO token entry
+        var act = async () => await wsClient.ConnectAsync(new Uri(_factory.Server.BaseAddress, "ws"), default);
+        // Pins the no-bypass guarantee: FirstOrDefault(p => p != marker) returns null,
+        // which must NOT authenticate — the handshake must be rejected with 401.
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .Where(e => e.Message.Contains("401"));  // 401 → no open socket, no teardown needed
     }
 
     [Fact]
