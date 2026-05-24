@@ -6,6 +6,8 @@ namespace Soundpad.Security;
 
 public class AuthTokenMiddleware
 {
+    public const string WsAuthMarker = "reson.auth.v1";
+
     private readonly RequestDelegate _next;
     private readonly SoundLibrary _library;
 
@@ -27,8 +29,13 @@ public class AuthTokenMiddleware
             return;
         }
 
-        var supplied = ctx.Request.Headers["X-Auth-Token"].FirstOrDefault()
-                       ?? ctx.Request.Query["t"].FirstOrDefault();
+        string? supplied = ctx.Request.Headers["X-Auth-Token"].FirstOrDefault();
+        if (supplied is null && ctx.WebSockets.IsWebSocketRequest)
+        {
+            supplied = ctx.WebSockets.WebSocketRequestedProtocols
+                .FirstOrDefault(p => !string.Equals(p, WsAuthMarker, StringComparison.Ordinal));
+        }
+        supplied ??= ctx.Request.Query["t"].FirstOrDefault(); // deprecated fallback (skew safety)
 
         if (supplied is null || !TokensMatch(supplied, _library.Config.AuthToken))
         {

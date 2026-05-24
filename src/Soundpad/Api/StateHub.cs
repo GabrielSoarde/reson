@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Soundpad.Security;
 
 namespace Soundpad.Api;
 
@@ -18,7 +19,9 @@ public class StateHub
 
     public async Task AcceptAsync(HttpContext ctx)
     {
-        var ws = await ctx.WebSockets.AcceptWebSocketAsync();
+        var ws = ctx.WebSockets.WebSocketRequestedProtocols.Contains(AuthTokenMiddleware.WsAuthMarker)
+            ? await ctx.WebSockets.AcceptWebSocketAsync(AuthTokenMiddleware.WsAuthMarker)
+            : await ctx.WebSockets.AcceptWebSocketAsync();
         var id = Guid.NewGuid();
         var sendLock = new SemaphoreSlim(1, 1);
         _sockets[id] = (ws, sendLock);
