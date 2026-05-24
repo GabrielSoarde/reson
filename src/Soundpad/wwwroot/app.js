@@ -344,6 +344,7 @@
       }
     }
     document.getElementById('monitor').checked = state.monitorEnabled;
+    document.getElementById('normalize').checked = state.normalizeEnabled;
     document.getElementById('volume').value = state.volume;
     document.getElementById('vol-value').textContent = state.volume + '%';
   }
@@ -360,11 +361,12 @@
     const ws = new WebSocket(`${proto}://${location.host}/ws?t=${tok}`);
     ws.onmessage = e => {
       const { type, originId: oid, payload } = JSON.parse(e.data);
-      if (oid && oid === originId && (type === 'volumeChanged' || type === 'monitorChanged' || type === 'monitorDeviceChanged')) return; // echo filter
+      if (oid && oid === originId && (type === 'volumeChanged' || type === 'monitorChanged' || type === 'monitorDeviceChanged' || type === 'normalizeChanged')) return; // echo filter
       switch (type) {
         case 'playing': nowPlaying = payload.soundId; render(); break;
         case 'stopped': nowPlaying = null; render(); break;
         case 'monitorChanged': state.monitorEnabled = payload.enabled; render(); break;
+        case 'normalizeChanged': state.normalizeEnabled = payload.enabled; render(); break;
         case 'volumeChanged': state.volume = payload.value; render(); break;
         case 'libraryChanged':
           if (drag.state !== 'idle') { drag.deferredRender = true; }
@@ -383,6 +385,10 @@
 
   document.getElementById('monitor').addEventListener('change', e => {
     api('/api/monitor', { method: 'POST', body: JSON.stringify({ enabled: e.target.checked }) });
+  });
+
+  document.getElementById('normalize').addEventListener('change', e => {
+    api('/api/normalize', { method: 'POST', body: JSON.stringify({ enabled: e.target.checked }) });
   });
 
   let volTimer;
