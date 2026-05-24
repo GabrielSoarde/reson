@@ -10,7 +10,10 @@ public record SoundEntryDto(
     int PlayCount = 0, DateTime? LastPlayedAt = null,
     // Schema v4: per-sound volume 0-100 (UI scale). Defaults to 100 for any
     // older client that doesn't model it.
-    int Volume = 100);
+    int Volume = 100,
+    // Schema v5: computed normalization gain in dB (null until the analyzer
+    // has run for this sound). Read-only from the client's perspective.
+    double? NormalizeGainDb = null);
 
 /// <summary>Lightweight board summary used by /api/state and /api/boards.</summary>
 public record BoardSummaryDto(string Id, string Name, string Color);
@@ -45,4 +48,7 @@ public record StateDto(
     // backfills a default board on Load), but typed nullable so the record's
     // default constructor remains usable by hand-written test fixtures.
     IReadOnlyList<BoardSummaryDto>? Boards = null,
-    string? ActiveBoardId = null);
+    string? ActiveBoardId = null,
+    // Schema v5: global normalization toggle. Defaults to true so older clients
+    // that don't render the toggle still see normalized playback by default.
+    bool NormalizeEnabled = true);

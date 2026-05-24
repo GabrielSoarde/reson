@@ -19,7 +19,7 @@ public static class PlaybackEndpoints
             var entries = active.Sounds.Select(s => new SoundEntryDto(
                 s.Id, s.File, s.Label, s.Color, s.Icon, s.Position,
                 statuses.TryGetValue(s.Id, out var m) && m,
-                s.PlayCount, s.LastPlayedAt, s.Volume)).ToList();
+                s.PlayCount, s.LastPlayedAt, s.Volume, s.NormalizeGainDb)).ToList();
             var boards = lib.Config.Boards
                 .Select(b => new BoardSummaryDto(b.Id, b.Name, b.Color))
                 .ToList();
@@ -36,7 +36,8 @@ public static class PlaybackEndpoints
                 MonitorDeviceName: loc.ResolveCurrentName(lib.Config.MonitorDevice),
                 MicDeviceName: loc.ResolveCurrentName(lib.Config.MicDevice),
                 Boards: boards,
-                ActiveBoardId: lib.Config.ActiveBoardId);
+                ActiveBoardId: lib.Config.ActiveBoardId,
+                NormalizeEnabled: lib.Config.NormalizeEnabled);
         });
 
         g.MapPost("/play/{soundId}", (string soundId, SoundLibrary lib, PlaybackEngine engine, AppOptions opts) =>
@@ -75,6 +76,16 @@ public static class PlaybackEndpoints
             lib.MutateConfig(c => c with { MonitorEnabled = body.Enabled });
             lib.Save();
             await hub.BroadcastAsync("monitorChanged", new { enabled = body.Enabled }, OriginIdOf(http));
+            return Results.NoContent();
+        });
+
+        // Global normalization toggle. SetNormalizeEnabled persists + raises
+        // SoundLibrary.Changed; the engine reads Config.NormalizeEnabled live on
+        // each play so no engine call is required here.
+        g.MapPost("/normalize", async (NormalizeBody body, SoundLibrary lib, StateHub hub, HttpContext http) =>
+        {
+            lib.SetNormalizeEnabled(body.Enabled);
+            await hub.BroadcastAsync("normalizeChanged", new { enabled = body.Enabled }, OriginIdOf(http));
             return Results.NoContent();
         });
 
@@ -184,6 +195,7 @@ public static class PlaybackEndpoints
 
     public record VolumeBody(int Value);
     public record MonitorBody(bool Enabled);
+    public record NormalizeBody(bool Enabled);
     public record MonitorDeviceBody(string? Device);
     public record MicDeviceBody(string? Device);
     public record GameDeviceBody(string? Device);
