@@ -52,7 +52,7 @@ public class SoundLibraryV4MigrationTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        lib.Config.SchemaVersion.Should().Be(4);
+        lib.Config.SchemaVersion.Should().Be(5);
         lib.Config.Boards.Should().HaveCount(1);
         lib.Config.ActiveBoardId.Should().Be("default");
 
@@ -138,9 +138,9 @@ public class SoundLibraryV4MigrationTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        // Re-read the file directly to confirm the v4 shape was written.
+        // Re-read the file directly to confirm the v5 shape was written.
         var raw = File.ReadAllText(ConfigPath);
-        raw.Should().Contain("\"schemaVersion\": 4");
+        raw.Should().Contain("\"schemaVersion\": 5");
         raw.Should().Contain("\"boards\":");
         raw.Should().Contain("\"activeBoardId\":");
         raw.Should().NotContain("\"grid\": {\n  ");  // grid no longer at top level
@@ -174,7 +174,7 @@ public class SoundLibraryV4MigrationTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        lib.Config.SchemaVersion.Should().Be(4);
+        lib.Config.SchemaVersion.Should().Be(5);
         lib.Config.Boards.Should().HaveCount(1);
         lib.ActiveBoard.Sounds.Should().ContainSingle(s => s.Id == "old");
         // FriendlyName preserved verbatim — MigrateDeviceIdentifiers is the

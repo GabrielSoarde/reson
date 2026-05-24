@@ -10,10 +10,10 @@ public class SoundConfigTests
     {
         // Default is born under the current schema (v4: multi-board, with
         // device fields holding WASAPI endpoint ids and SoundEntry carrying
-        // PlayCount + LastPlayedAt + Volume). The v1/v2/v3 → v4 migration
+        // PlayCount + LastPlayedAt + Volume). The v1/v2/v3/v4 → v5 migration
         // paths are covered separately by SoundLibraryMigrationTests.
         var c = SoundConfig.Default();
-        c.SchemaVersion.Should().Be(4);
+        c.SchemaVersion.Should().Be(5);
         c.MonitorDevice.Should().BeNull();
         c.MonitorEnabled.Should().BeFalse();
         c.Volume.Should().Be(80);

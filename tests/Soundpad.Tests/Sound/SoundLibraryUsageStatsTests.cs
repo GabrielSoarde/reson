@@ -125,9 +125,9 @@ public class SoundLibraryUsageStatsTests : IDisposable
         var lib = new SoundLibrary(new SoundLibraryOptions(_tempDir));
         lib.Load();
 
-        // v2 → v4 migration: schema bumps to current, and the top-level
+        // v2 → v5 migration: schema bumps to current, and the top-level
         // grid+sounds get wrapped into a default board.
-        lib.Config.SchemaVersion.Should().Be(4);
+        lib.Config.SchemaVersion.Should().Be(5);
         var entry = lib.ActiveBoard.Sounds.Single();
         entry.PlayCount.Should().Be(0);
         entry.LastPlayedAt.Should().BeNull();

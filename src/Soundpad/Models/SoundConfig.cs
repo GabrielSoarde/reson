@@ -15,7 +15,10 @@ public record SoundConfig
     // collapse into a Boards list; SoundEntry gains Volume (0-100). Load()
     // wraps a v3 config in a single "default" board to preserve all sounds
     // and the user's grid dimensions.
-    public int SchemaVersion { get; init; } = 4;
+    // v4 → v5 (2026-05): additive — SoundEntry gains NormalizeGainDb (nullable,
+    // default null) and SoundConfig gains NormalizeEnabled (default true). No
+    // data transform needed; deserializer fills defaults + stamp-forward handles it.
+    public int SchemaVersion { get; init; } = 5;
     public string AuthToken { get; init; } = "";
     public int Port { get; init; } = 8080;
     public string? PreferredNetworkAdapter { get; init; }
@@ -23,6 +26,9 @@ public record SoundConfig
     public string? MonitorDevice { get; init; }
     public string? MicDevice { get; init; }
     public bool MonitorEnabled { get; init; }
+    // Schema v5: global toggle for loudness normalization. Default on so
+    // sounds equalize out of the box; user can disable to hear raw levels.
+    public bool NormalizeEnabled { get; init; } = true;
     public int Volume { get; init; } = 80;
     public int LatencyMs { get; init; } = 50;
     // Schema v4: boards replace the single top-level Grid+Sounds. Default

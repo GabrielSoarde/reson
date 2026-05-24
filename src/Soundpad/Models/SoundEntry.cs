@@ -19,4 +19,9 @@ public record SoundEntry
     // ceiling-caps below the master fader. Default 100 = no attenuation,
     // matching pre-v4 behavior so the migration is value-neutral.
     public int Volume { get; init; } = 100;
+    // Schema v5: per-sound loudness-normalization gain in dB, computed lazily
+    // from the decoded PCM on first play (RMS-based, toward NormalizeTargetDb).
+    // null = not yet computed. Applied multiplicatively with Volume + global
+    // volume in the engine when SoundConfig.NormalizeEnabled is true.
+    public double? NormalizeGainDb { get; init; } = null;
 }

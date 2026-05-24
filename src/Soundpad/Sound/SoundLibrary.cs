@@ -8,8 +8,8 @@ namespace Soundpad.Sound;
 
 public class SoundLibrary
 {
-    // Bumped to 4: multi-board support. The single top-level Grid+Sounds pair
-    // moves INTO a Board entry; SoundConfig grows a Boards list + ActiveBoardId.
+    // Bumped to 5: schema v5 adds NormalizeGainDb (SoundEntry) + NormalizeEnabled
+    // (SoundConfig). Both are additive with safe defaults; stamp-forward handles them.
     // v1 → v2 migration: device fields hold endpoint ids instead of
     // FriendlyNames — see MigrateDeviceIdentifiers below.
     // v2 → v3 migration: pure schema bump (SoundEntry gained PlayCount +
@@ -18,7 +18,8 @@ public class SoundLibrary
     // v3 → v4 migration: wrap the old top-level Grid+Sounds in a single
     // "default" board. Happens inside Load() before deserializing into the
     // strongly-typed SoundConfig so existing on-disk shapes still round-trip.
-    private const int CurrentSchemaVersion = 4;
+    // v4 → v5 migration: pure schema bump (additive fields with defaults).
+    private const int CurrentSchemaVersion = 5;
     private readonly SoundLibraryOptions _opts;
     private readonly object _lock = new();
     private SoundConfig _config = SoundConfig.Default();
