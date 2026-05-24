@@ -4,7 +4,7 @@
 
 **Goal:** Replace the post-mix hard-clamp limiter with a soft-knee, so loud/boosted material rolls off smoothly toward the ceiling instead of clipping into audible distortion.
 
-**Architecture:** `LimiterSampleProvider` (the post-mix stage on the game output) currently hard-clamps each sample to `[-1, 1]`. Swap the clamp for a `tanh`-based soft knee above a threshold (default 0.95): samples below the threshold pass through untouched; above it, the excess is smoothly compressed and asymptotes to ±1.0, never exceeding it.
+**Architecture:** `LimiterSampleProvider` (the post-mix stage on the game output) currently hard-clamps each sample to `[-1, 1]`. Swap the clamp for a `tanh`-based soft knee above a threshold (default 0.98): samples below the threshold pass through untouched; above it, the excess is smoothly compressed and asymptotes to ±1.0, never exceeding it.
 
 **Tech Stack:** .NET 8 (`Soundpad.*` namespace, brand "Reson"), NAudio, xUnit + FluentAssertions.
 
@@ -17,7 +17,7 @@
 ## Design decisions (locked)
 
 - **Curve:** for `|s| > T`, `out = sign(s) · (T + (1−T)·tanh((|s|−T)/(1−T)))`. Continuous at `T` (evaluates to `T`), monotonic, and asymptotes to `±1.0` as `|s|→∞` — so the output is always strictly inside `[−1, 1]` above the knee and exactly the input below it.
-- **Threshold:** default `0.95`, injected via constructor so it's tunable (and testable) without touching call sites. No user-facing config field in T6 — YAGNI; a constant default is enough until someone asks.
+- **Threshold: default `0.98` (deliberate, not the roadmap's example).** The roadmap wrote "soft-knee em 0.95", but 0.95 as a *protection* limiter is too aggressive: it would compress any clip whose peaks sit between 0.95 and 1.0 — clean, non-clipping material that didn't need touching — shaving 5% of the dynamic range off the top of every peaky sound, all the time. A protection limiter should only engage on material genuinely hitting the ceiling, so the threshold sits near 1.0. `0.98` leaves a 0.02 knee for the tanh to round off the last bit before 0 dBFS while leaving everything below 0.98 bit-exact. This is a conscious acoustic choice; 0.95 was an example number in the roadmap, not a validated decision. Injected via constructor so it's tunable/testable. No user-facing config field in T6 — YAGNI.
 - **Position unchanged:** the limiter stays exactly where it is in the chain (post-mix, on the game output, before `WasapiOut`). Only the per-sample transfer function changes.
 - **Below threshold is bit-exact pass-through:** normal-level material is untouched (no timbre change), same guarantee the hard-clamp gave for `|s| ≤ 1`.
 
@@ -58,7 +58,7 @@ public class LimiterSampleProviderTests
         }
     }
 
-    private static float[] Limit(float[] input, double threshold = 0.95)
+    private static float[] Limit(float[] input, double threshold)
     {
         var limiter = new LimiterSampleProvider(new ArraySource(input), threshold);
         var outBuf = new float[input.Length];
@@ -72,43 +72,48 @@ public class LimiterSampleProviderTests
         return outBuf;
     }
 
+    // Curve-shape tests use an explicit threshold of 0.5 — clean, exactly
+    // representable in float, far from any epsilon-boundary fragility. The
+    // shipping default (0.98) is verified separately in Default_Threshold_*.
+
     [Fact]
     public void Below_Threshold_Passes_Through_Bit_Exact()
     {
-        var input = new[] { 0f, 0.1f, -0.3f, 0.5f, -0.9f, 0.95f, -0.95f };
-        var outp = Limit(input);
-        outp.Should().Equal(input); // untouched at/below threshold
+        // All strictly below 0.5, plus 0.5 itself (exactly representable in
+        // float, so the <= boundary comparison is bit-safe).
+        var input = new[] { 0f, 0.1f, -0.3f, 0.49f, 0.5f, -0.5f };
+        var outp = Limit(input, threshold: 0.5);
+        outp.Should().Equal(input);
     }
 
     [Fact]
-    public void Above_Threshold_Is_Compressed_Below_One()
+    public void Above_Threshold_Is_Compressed_Strictly_Below_One()
     {
-        var outp = Limit(new[] { 2.0f, 5.0f, 1.01f });
-        foreach (var s in outp) s.Should().BeInRange(0.95f, 0.99999f); // never reaches/exceeds 1.0
+        var outp = Limit(new[] { 1.0f, 2.0f, 5.0f }, threshold: 0.5);
+        foreach (var s in outp) s.Should().BeInRange(0.5f, 0.99999f); // above knee, never reaches 1.0
     }
 
     [Fact]
     public void Negative_Is_Symmetric()
     {
-        var pos = Limit(new[] { 3.0f })[0];
-        var neg = Limit(new[] { -3.0f })[0];
+        var pos = Limit(new[] { 3.0f }, 0.5)[0];
+        var neg = Limit(new[] { -3.0f }, 0.5)[0];
         neg.Should().BeApproximately(-pos, 1e-6f);
     }
 
     [Fact]
     public void Never_Exceeds_Unit_Range_For_Extreme_Input()
     {
-        var outp = Limit(new[] { 100f, -100f, 10f, -10f });
+        var outp = Limit(new[] { 100f, -100f, 10f, -10f }, 0.5);
         foreach (var s in outp) Math.Abs(s).Should().BeLessThanOrEqualTo(1.0f);
     }
 
     [Fact]
     public void Monotonic_Above_Threshold()
     {
-        // Larger input → larger (or equal) output above the knee.
-        var a = Limit(new[] { 1.1f })[0];
-        var b = Limit(new[] { 1.5f })[0];
-        var c = Limit(new[] { 3.0f })[0];
+        var a = Limit(new[] { 0.6f }, 0.5)[0];
+        var b = Limit(new[] { 1.0f }, 0.5)[0];
+        var c = Limit(new[] { 3.0f }, 0.5)[0];
         a.Should().BeLessThan(b);
         b.Should().BeLessThan(c);
     }
@@ -116,18 +121,67 @@ public class LimiterSampleProviderTests
     [Fact]
     public void Continuous_At_Threshold()
     {
-        // Just below and just above the knee shouldn't jump.
-        var below = Limit(new[] { 0.95f })[0];
-        var above = Limit(new[] { 0.9500001f })[0];
-        above.Should().BeApproximately(below, 1e-4f);
+        // At T (=0.5, exact float) output is exactly T. Just above, output stays
+        // very close to T — no jump. 0.5001f is a distinct float from 0.5f, and
+        // the delta is well above float epsilon, so this isn't a tautology.
+        var atT = Limit(new[] { 0.5f }, 0.5)[0];
+        var justAbove = Limit(new[] { 0.5001f }, 0.5)[0];
+        atT.Should().Be(0.5f);
+        justAbove.Should().BeApproximately(0.5f, 0.01f);
+        justAbove.Should().BeGreaterThan(atT); // strictly increasing past the knee
+    }
+
+    private static float ReadOne(LimiterSampleProvider lim)
+    {
+        var b = new float[1];
+        lim.Read(b, 0, 1);
+        return b[0];
+    }
+
+    [Fact]
+    public void Default_Threshold_Is_Near_098()
+    {
+        // 0.97 is below the default 0.98 knee → untouched; 0.99 is above → compressed.
+        ReadOne(new LimiterSampleProvider(new ArraySource(new[] { 0.97f }))).Should().Be(0.97f);
+        var hot = ReadOne(new LimiterSampleProvider(new ArraySource(new[] { 0.99f })));
+        hot.Should().BeInRange(0.98f, 0.99f);
+        hot.Should().BeLessThan(0.99f); // compressed, not pass-through
+    }
+
+    [Fact]
+    public void Continuous_Waveform_Rolls_Off_Without_Plateau()
+    {
+        // The case T6 exists for: a continuous waveform whose peaks exceed 1.0
+        // after an F1 boost. A hard clamp would flat-top every over-unit sample
+        // to exactly 1.0 (a plateau = audible distortion). The soft knee maps
+        // each distinct input to a distinct output, so the crest stays curved.
+        int rate = 48000, frames = rate / 100; // ~one 100 Hz cycle
+        var sine = new float[frames];
+        for (int i = 0; i < frames; i++)
+            sine[i] = (float)(1.3 * Math.Sin(2 * Math.PI * i / frames)); // peak 1.3
+
+        var outp = Limit(sine, threshold: 0.98);
+
+        // (a) never exceeds the ceiling
+        foreach (var s in outp) Math.Abs(s).Should().BeLessThanOrEqualTo(1.0f);
+
+        // (b) the over-threshold region is NOT a flat plateau: the outputs from
+        // inputs above 0.98 take many distinct values (a hard clamp would make
+        // them all identical at 1.0).
+        var overKnee = new List<float>();
+        for (int i = 0; i < frames; i++)
+            if (sine[i] > 0.98f) overKnee.Add(outp[i]);
+        overKnee.Should().HaveCountGreaterThan(3);
+        overKnee.Distinct().Count().Should().BeGreaterThan(overKnee.Count / 2); // mostly distinct, no plateau
     }
 }
 ```
 
+
 - [ ] **Step 2: Run, verify fails**
 
 Run: `dotnet test --filter LimiterSampleProviderTests`
-Expected: FAIL — the current `LimiterSampleProvider` has no `(source, threshold)` constructor, and hard-clamp would fail `Above_Threshold_Is_Compressed_Below_One` (it returns exactly `1.0`, outside `[0.95, 0.99999]`).
+Expected: FAIL — the current `LimiterSampleProvider` has no `(source, threshold)` constructor, and hard-clamp would fail `Above_Threshold_Is_Compressed_Strictly_Below_One` (it returns exactly `1.0`) and `Continuous_Waveform_Rolls_Off_Without_Plateau` (it flat-tops the crest).
 
 - [ ] **Step 3: Implement the soft knee**
 
@@ -141,7 +195,7 @@ namespace Soundpad.Audio;
 /// <summary>
 /// Soft-knee limiter wrapping another <see cref="ISampleProvider"/>, on the
 /// post-mix game output before WASAPI. Samples at or below <c>threshold</c>
-/// (default 0.95) pass through bit-exact. Above it, the excess is smoothly
+/// (default 0.98) pass through bit-exact. Above it, the excess is smoothly
 /// compressed via tanh and asymptotes to ±1.0, so output never reaches or
 /// exceeds the ±1.0 ceiling and loud/boosted material rolls off instead of
 /// hard-clipping into audible distortion.
@@ -151,6 +205,8 @@ namespace Soundpad.Audio;
 /// Continuous at T, monotonic, bounded in (−1, 1) above the knee. Replaces the
 /// earlier hard clamp (which prevented overflow but distorted on hot material —
 /// the exact symptom this fixes, now that F1 normalization can boost +12 dB).
+/// Default threshold is 0.98 (near the ceiling) so the limiter only engages on
+/// material genuinely approaching 0 dBFS, leaving everything below untouched.
 /// </remarks>
 public sealed class LimiterSampleProvider : ISampleProvider
 {
@@ -158,7 +214,7 @@ public sealed class LimiterSampleProvider : ISampleProvider
     private readonly float _threshold;
     private readonly float _knee; // 1 - threshold
 
-    public LimiterSampleProvider(ISampleProvider source, double threshold = 0.95)
+    public LimiterSampleProvider(ISampleProvider source, double threshold = 0.98)
     {
         _source = source;
         WaveFormat = source.WaveFormat;
@@ -188,7 +244,7 @@ public sealed class LimiterSampleProvider : ISampleProvider
 - [ ] **Step 4: Run, verify passes**
 
 Run: `dotnet test --filter LimiterSampleProviderTests`
-Expected: 6 passing.
+Expected: 8 passing (6 curve-shape + default-threshold + continuous-waveform).
 
 - [ ] **Step 5: Update call sites if the constructor signature broke them**
 
@@ -213,7 +269,7 @@ git commit -m "feat(audio): soft-knee limiter (replaces hard clamp)"
 
 ## Self-review checklist (run after implementing)
 
-- **Spec coverage:** T6 = "limiter soft-knee em 0.95 (configurável)". Threshold is a constructor param (configurable), default 0.95. ✓
+- **Spec coverage:** T6 = "limiter soft-knee (configurável)". Threshold is a constructor param (configurable), default **0.98** — deliberately raised from the roadmap's example 0.95 (a protection limiter shouldn't compress clean peaks; see Design decisions). ✓
 - **No overflow regression:** the soft knee asymptotes to ±1.0 and the tests assert output never exceeds the unit range for extreme input — same overflow guarantee the hard clamp gave. ✓
 - **No timbre change at normal levels:** `Below_Threshold_Passes_Through_Bit_Exact` locks that material ≤ 0.95 is untouched. ✓
 - **Type consistency:** single constructor `LimiterSampleProvider(ISampleProvider, double threshold = 0.95)`; `Read` signature unchanged.
