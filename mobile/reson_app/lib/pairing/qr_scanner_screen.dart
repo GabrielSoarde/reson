@@ -69,7 +69,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     try {
       final uri = Uri.parse(raw.trim());
       if (!uri.hasScheme || (uri.scheme != 'http' && uri.scheme != 'https')) return null;
-      final token = uri.queryParameters['t'] ?? uri.queryParameters['T'];
+      final frag = Uri.splitQueryString(uri.fragment);
+      final token = uri.queryParameters['t'] ?? uri.queryParameters['T'] ?? frag['t'] ?? frag['T'];
       if (token == null || token.isEmpty) return null;
       final host = uri.host;
       if (host.isEmpty) return null;

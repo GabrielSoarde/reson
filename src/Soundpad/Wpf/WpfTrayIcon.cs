@@ -36,7 +36,7 @@ public sealed class WpfTrayIcon : IDisposable
     private void Init()
     {
         var ip = _adapter.IPv4.First().ToString();
-        var url = $"http://{ip}:{_port}/?t={_library.Config.AuthToken}";
+        var url = $"http://{ip}:{_port}/#t={_library.Config.AuthToken}";
 
         _icon = new NotifyIcon
         {

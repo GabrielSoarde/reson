@@ -10,16 +10,20 @@ namespace Soundpad.Security;
 /// </summary>
 public static class TokenMask
 {
+    // Matches the value of a `t` param whether it's in the query (?t=/&t=) or the
+    // fragment (#t=). Stops at the next &/# so only the token value is masked.
+    private static readonly Regex TParam = new(@"([?&#]t=)([^&#]+)", RegexOptions.Compiled);
+
     /// <summary>first4…last4, or just "…" when too short to reveal safely.</summary>
     public static string Mask(string token)
     {
+        // Need >=12 chars to reveal 4+4 without the two halves overlapping or
+        // exposing the whole short token; anything shorter is fully hidden.
         if (string.IsNullOrEmpty(token) || token.Length < 12) return "…";
         return $"{token[..4]}…{token[^4..]}";
     }
 
-    /// <summary>Mask the value of the <c>t</c> query parameter inside a URL string.</summary>
-    public static string MaskUrl(string url)
-    {
-        return Regex.Replace(url, @"([?&]t=)([^&#]+)", m => m.Groups[1].Value + Mask(m.Groups[2].Value));
-    }
+    /// <summary>Mask the value of the <c>t</c> query or fragment parameter inside a URL string.</summary>
+    public static string MaskUrl(string url) =>
+        TParam.Replace(url, m => m.Groups[1].Value + Mask(m.Groups[2].Value));
 }

@@ -184,7 +184,7 @@ internal sealed class ConnectionPopover : Popup
 
     private void RefreshQr()
     {
-        var url = $"http://{_activeIp}:{_port}/?t={_library.Config.AuthToken}";
+        var url = $"http://{_activeIp}:{_port}/#t={_library.Config.AuthToken}";
         try
         {
             _qrImage.Source = QrRenderer.RenderBitmap(url);

@@ -30,4 +30,11 @@ public class TokenMaskTests
     {
         TokenMask.MaskUrl("http://192.168.1.101:8080/").Should().Be("http://192.168.1.101:8080/");
     }
+
+    [Fact]
+    public void MaskUrl_Masks_The_t_Fragment_Value()
+    {
+        TokenMask.MaskUrl("http://192.168.1.101:8080/#t=60dd78bd3517d510cb4faaf470cf1105")
+            .Should().Be("http://192.168.1.101:8080/#t=60dd…1105");
+    }
 }

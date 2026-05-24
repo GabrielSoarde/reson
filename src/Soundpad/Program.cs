@@ -321,7 +321,7 @@ app.Lifetime.ApplicationStopping.Register(() =>
 
 if (!isTesting && adapter is not null)
 {
-    Console.WriteLine($"Reson rodando em http://{adapter.IPv4.First()}:{boundPort}/?t=<token-redacted>");
+    Console.WriteLine($"Reson rodando em http://{adapter.IPv4.First()}:{boundPort}/#t=<token-redacted>");
 }
 
 app.Run();

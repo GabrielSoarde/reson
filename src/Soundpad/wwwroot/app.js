@@ -1,7 +1,13 @@
 (() => {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('t');
-  if (token) localStorage.setItem('soundpad.token', token);
+  // Token may arrive in the URL fragment (#t=, never sent to the server — preferred)
+  // or the legacy query (?t=). Persist it, then strip it from the address bar/history.
+  const hashTok = new URLSearchParams(location.hash.replace(/^#/, '')).get('t');
+  const queryTok = new URLSearchParams(location.search).get('t');
+  const incoming = hashTok || queryTok;
+  if (incoming) {
+    localStorage.setItem('soundpad.token', incoming);
+    history.replaceState(null, '', location.pathname); // drop #t=/?t= from the URL
+  }
   const tok = localStorage.getItem('soundpad.token') || '';
   // crypto.randomUUID() is only available in secure contexts (https/localhost).
   // Over plain http on a LAN IP we fall back to crypto.getRandomValues (always available).
