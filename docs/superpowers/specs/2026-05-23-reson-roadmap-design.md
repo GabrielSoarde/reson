@@ -1,7 +1,7 @@
 # Reson — Gap-Resolution Roadmap
 
 **Data:** 2026-05-23 (rev. 2026-05-24 após review de sequenciamento)
-**Status:** Approved (aguardando review)
+**Status:** Approved (rev. 2 incorporada)
 **Tipo:** Roadmap spec (cada milestone vira seu próprio plano de implementação)
 
 ## Visão geral
