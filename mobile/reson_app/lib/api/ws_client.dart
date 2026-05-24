@@ -61,12 +61,15 @@ class WsClient {
     final wsBase = baseUrl
         .replaceFirst(RegExp('^http://'), 'ws://')
         .replaceFirst(RegExp('^https://'), 'wss://');
-    final uri = Uri.parse('$wsBase/ws?t=$token');
+    final uri = Uri.parse('$wsBase/ws?t=$token'); // TODO(T7a-cleanup): drop ?t= a release after all servers updated
     try {
       // Use IOWebSocketChannel so we control connect-timeout and inherit
       // dart:io socket behavior (cleartext is allowed by Android's
       // network_security_config; see manifest).
+      // Token travels in the WS subprotocol (out of the URL); 'reson.auth.v1' is
+      // the marker the server echoes, the token is the second offered protocol.
       _channel = IOWebSocketChannel.connect(uri,
+          protocols: ['reson.auth.v1', token],
           pingInterval: const Duration(seconds: 25),
           connectTimeout: const Duration(seconds: 10));
       _sub = _channel!.stream.listen(
