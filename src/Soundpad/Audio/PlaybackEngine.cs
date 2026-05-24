@@ -67,6 +67,13 @@ public class PlaybackEngine
     // instead of stomping the per-sound ceiling.
     private float _activePerSoundFactor = 1f;
 
+    // Normalization constants and per-play state. Target is -20 dBFS (a
+    // comfortable level below digital full-scale); max boost is +12 dB so a
+    // very quiet clip doesn't end up brutally loud.
+    private const double NormalizeTargetDb = -20.0;
+    private const double NormalizeMaxBoostDb = 12.0;
+    private float _activeNormalizeLinear = 1f;
+
     public event Action<string>? Playing;
     public event Action? Stopped;
     public event Action<bool>? MonitorChanged;
@@ -405,7 +412,8 @@ public class PlaybackEngine
         // default to 1.0 (no attenuation) otherwise. Computed effective
         // volume = global * per-sound, with global on the master slider.
         _activePerSoundFactor = LookupPerSoundFactor(cmd.SoundId);
-        var effective = (_volume / 100f) * _activePerSoundFactor;
+        _activeNormalizeLinear = ComputeNormalizeLinear(cmd.SoundId, cached);
+        var effective = (_volume / 100f) * _activePerSoundFactor * _activeNormalizeLinear;
 
         var gameSound = new SoundSampleProvider(cached, WorkingFormat, effective);
         gameSound.Finished += _ => _queue.Add(new PlaybackEndedCommand(token, IsGameStream: true));
@@ -442,7 +450,7 @@ public class PlaybackEngine
         // Effective volume must re-multiply by the current per-sound factor so
         // a sound with Volume=50 stays at half its slider position even when
         // the user drags the master fader to 100.
-        var effective = (_volume / 100f) * _activePerSoundFactor;
+        var effective = (_volume / 100f) * _activePerSoundFactor * _activeNormalizeLinear;
         if (_activeGameSound is not null) _activeGameSound.Volume = effective;
         if (_activeMonitorSound is not null) _activeMonitorSound.Volume = effective;
         VolumeChanged?.Invoke(_volume);
@@ -466,6 +474,28 @@ public class PlaybackEngine
         }
         catch { /* never let a stat lookup crash playback */ }
         return 1f;
+    }
+
+    // Linear normalization multiplier for a sound. Disabled → 1.0. If the gain
+    // isn't stored yet, compute it from the decoded PCM (fast, on this thread)
+    // and apply immediately; persist on a background task so the audio thread
+    // never blocks on disk I/O (avoids a first-play glitch). SetNormalizeGainDb
+    // is idempotent + lock-guarded, so a backgrounded/raced write is safe.
+    private float ComputeNormalizeLinear(string soundId, CachedSound cached)
+    {
+        if (_library is null || !_library.Config.NormalizeEnabled) return 1f;
+        var entry = _library.Config.Boards
+            .SelectMany(b => b.Sounds)
+            .FirstOrDefault(s => s.Id == soundId);
+        if (entry is null) return 1f;
+
+        if (entry.NormalizeGainDb is double stored)
+            return LoudnessAnalyzer.DbToLinear(stored);
+
+        double gainDb = LoudnessAnalyzer.ComputeGainDb(
+            cached.PcmBytes, cached.Format.Channels, NormalizeTargetDb, NormalizeMaxBoostDb);
+        _ = Task.Run(() => _library.SetNormalizeGainDb(soundId, gainDb)); // persist off the audio thread
+        return LoudnessAnalyzer.DbToLinear(gainDb);
     }
 
     private void HandleSetMonitorEnabled(bool b)
@@ -526,6 +556,18 @@ public class PlaybackEngine
 
     /// <summary>For tests: the current active sound on the monitor mixer.</summary>
     internal SoundSampleProvider? ActiveMonitorSoundForTests => _activeMonitorSound;
+
+    /// <summary>
+    /// For tests: the linear normalization multiplier applied for the current
+    /// sound (1.0 when normalization is disabled or not yet computed).
+    /// </summary>
+    internal float ActiveNormalizeLinearForTests => _activeNormalizeLinear;
+
+    /// <summary>
+    /// For tests: the current effective volume on the active game sound,
+    /// or null when nothing is playing.
+    /// </summary>
+    internal float? ActiveGameEffectiveVolumeForTests => _activeGameSound?.Volume;
 
     /// <summary>
     /// For tests: simulate the active game (or monitor) sound finishing.
