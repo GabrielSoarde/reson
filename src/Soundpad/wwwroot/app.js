@@ -358,7 +358,10 @@
 
   function connectWs() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws?t=${tok}`);
+    // Token travels in the WS subprotocol (out of the URL). 'reson.auth.v1' is the
+    // marker the server echoes; the token is the second offered protocol.
+    // TODO(T7a-cleanup): drop the ?t= query a release after all servers are updated.
+    const ws = new WebSocket(`${proto}://${location.host}/ws?t=${tok}`, ['reson.auth.v1', tok]);
     ws.onmessage = e => {
       const { type, originId: oid, payload } = JSON.parse(e.data);
       if (oid && oid === originId && (type === 'volumeChanged' || type === 'monitorChanged' || type === 'monitorDeviceChanged' || type === 'normalizeChanged')) return; // echo filter
