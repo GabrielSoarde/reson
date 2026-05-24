@@ -202,7 +202,10 @@ namespace Soundpad.Audio;
 /// hard-clipping into audible distortion.
 /// </summary>
 /// <remarks>
-/// Transfer function for |s| &gt; T:  out = sign(s)·(T + (1−T)·tanh((|s|−T)/(1−T))).
+/// Transfer function for |s| &gt; T:  out = sign(s)·(T + K·tanh(|s|−T)),  where K = 1−T.
+/// The excess is the raw value (|s|−T), intentionally NOT divided by K — dividing
+/// would saturate tanh for small K (e.g. K=0.02 at T=0.98) and recreate a plateau
+/// at the locked threshold (see the post-execution correction in Design decisions).
 /// Continuous at T, monotonic, bounded in (−1, 1) above the knee. Replaces the
 /// earlier hard clamp (which prevented overflow but distorted on hot material —
 /// the exact symptom this fixes, now that F1 normalization can boost +12 dB).
@@ -234,8 +237,13 @@ public sealed class LimiterSampleProvider : ISampleProvider
             float s = buffer[i];
             float mag = Math.Abs(s);
             if (mag <= _threshold) continue; // bit-exact pass-through
-            float compressed = _threshold + _knee * MathF.Tanh((mag - _threshold) / _knee);
-            buffer[i] = s < 0 ? -compressed : compressed;
+            // Raw excess (mag − T), NOT divided by _knee: dividing saturates tanh at
+            // T=0.98 and recreates a plateau. Double interior + BitDecrement guard so
+            // float rounding can never emit exactly 1.0f. See shipped LimiterSampleProvider.cs.
+            double excess = (double)mag - _threshold;
+            double compressed = _threshold + _knee * Math.Tanh(excess);
+            float clamped = (float)Math.Min(compressed, (double)MathF.BitDecrement(1.0f));
+            buffer[i] = s < 0 ? -clamped : clamped;
         }
         return n;
     }
