@@ -11,12 +11,14 @@ namespace Soundpad.Audio;
 /// hard-clipping into audible distortion.
 /// </summary>
 /// <remarks>
-/// Transfer function for |s| &gt; T:  out = sign(s)·(T + (1−T)·tanh((|s|−T)/(1−T))).
-/// Continuous at T, monotonic, bounded in (−1, 1) above the knee. Replaces the
-/// earlier hard clamp (which prevented overflow but distorted on hot material —
-/// the exact symptom this fixes, now that F1 normalization can boost +12 dB).
-/// Default threshold is 0.98 (near the ceiling) so the limiter only engages on
-/// material genuinely approaching 0 dBFS, leaving everything below untouched.
+/// Transfer function for |s| &gt; T:  out = sign(s)·(T + K·tanh(|s|−T)),  where K = 1−T.
+/// The excess is the raw value (|s|−T), intentionally not divided by K — dividing
+/// would saturate tanh for small K (e.g. K=0.02 at T=0.98) and recreate a plateau
+/// at the locked threshold. Continuous at T, monotonic, bounded in (−1, 1) above
+/// the knee. Replaces the earlier hard clamp (which prevented overflow but distorted
+/// on hot material — the exact symptom this fixes, now that F1 normalization can
+/// boost +12 dB). Default threshold is 0.98 (near the ceiling) so the limiter only
+/// engages on material genuinely approaching 0 dBFS, leaving everything below untouched.
 /// </remarks>
 public sealed class LimiterSampleProvider : ISampleProvider
 {
