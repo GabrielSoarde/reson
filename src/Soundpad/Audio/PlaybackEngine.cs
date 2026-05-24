@@ -483,10 +483,10 @@ public class PlaybackEngine
     // is idempotent + lock-guarded, so a backgrounded/raced write is safe.
     private float ComputeNormalizeLinear(string soundId, CachedSound cached)
     {
-        if (_library is null || !_library.Config.NormalizeEnabled) return 1f;
-        var entry = _library.Config.Boards
-            .SelectMany(b => b.Sounds)
-            .FirstOrDefault(s => s.Id == soundId);
+        if (_library is null) return 1f;
+        var config = _library.Config; // single consistent snapshot
+        if (!config.NormalizeEnabled) return 1f;
+        var entry = config.Boards.SelectMany(b => b.Sounds).FirstOrDefault(s => s.Id == soundId);
         if (entry is null) return 1f;
 
         if (entry.NormalizeGainDb is double stored)
@@ -494,7 +494,12 @@ public class PlaybackEngine
 
         double gainDb = LoudnessAnalyzer.ComputeGainDb(
             cached.PcmBytes, cached.Format.Channels, NormalizeTargetDb, NormalizeMaxBoostDb);
-        _ = Task.Run(() => _library.SetNormalizeGainDb(soundId, gainDb)); // persist off the audio thread
+        var library = _library; // capture non-null local for the lambda
+        _ = Task.Run(() =>
+        {
+            try { library.SetNormalizeGainDb(soundId, gainDb); }
+            catch (Exception ex) { Console.Error.WriteLine($"audio-engine: normalize persist failed: {ex.Message}"); }
+        }); // persist off the audio thread; best-effort (value is recomputable next play)
         return LoudnessAnalyzer.DbToLinear(gainDb);
     }
 
