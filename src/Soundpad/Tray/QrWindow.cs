@@ -21,7 +21,7 @@ public class QrWindow : Form
         var img = Image.FromStream(ms);
 
         var pb = new PictureBox { Image = img, SizeMode = PictureBoxSizeMode.Zoom, Dock = DockStyle.Fill };
-        var lbl = new Label { Text = url, Dock = DockStyle.Bottom, Height = 32, TextAlign = ContentAlignment.MiddleCenter };
+        var lbl = new Label { Text = Soundpad.Security.TokenMask.MaskUrl(url), Dock = DockStyle.Bottom, Height = 32, TextAlign = ContentAlignment.MiddleCenter };
         Controls.Add(pb);
         Controls.Add(lbl);
     }

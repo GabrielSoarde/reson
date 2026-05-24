@@ -193,7 +193,7 @@ internal sealed class ConnectionPopover : Popup
         {
             Console.Error.WriteLine($"ConnectionPopover.RefreshQr: {ex.Message}");
         }
-        _urlText.Text = url;
+        _urlText.Text = Soundpad.Security.TokenMask.MaskUrl(url);
     }
 
     /// <summary>
