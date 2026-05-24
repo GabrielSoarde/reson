@@ -62,9 +62,11 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
   /// Returns (baseUrl, token) or null on any parse failure.
   ///
-  /// baseUrl == scheme + host + port (no path, no query). Token comes from `t=`.
-  /// We accept either case for the param name to be forgiving (the backend
-  /// emits lowercase, but a stray scanner could uppercase).
+  /// baseUrl == scheme + host + port (no path, no query). Token comes from the
+  /// `t` param in the URL fragment (`#t=`, current) or query (`?t=`, legacy) —
+  /// both are accepted for back-compat. We also accept either case for the param
+  /// name to be forgiving (the backend emits lowercase, but a stray scanner could
+  /// uppercase).
   (String, String)? _parseQr(String raw) {
     try {
       final uri = Uri.parse(raw.trim());
