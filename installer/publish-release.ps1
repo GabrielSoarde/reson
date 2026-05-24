@@ -159,6 +159,15 @@ if (-not $hasNet9) { $env:DOTNET_ROLL_FORWARD = 'Major' }
     --token $ghToken
 if ($LASTEXITCODE -ne 0) { throw "vpk upload github failed (exit $LASTEXITCODE)" }
 
+# --- 6b. Set the release notes (body) -------------------------------------
+# `vpk upload github` creates the release but does NOT apply our -Notes text, so
+# set it explicitly now. This matters beyond cosmetics: the Android updater shows
+# the GitHub release `body` verbatim in its "update available" prompt
+# (UpdateChecker reads json['body']), so -Notes is the user-facing changelog.
+Write-Host "==> Setting release notes on $tag..." -ForegroundColor Cyan
+gh release edit $tag --notes $Notes
+if ($LASTEXITCODE -ne 0) { throw "gh release edit (notes) failed (exit $LASTEXITCODE)" }
+
 # --- 7. Attach the Android APK to the same release ------------------------
 Write-Host "==> Attaching Android APK to release $tag..." -ForegroundColor Cyan
 gh release upload $tag $apkDist --clobber
