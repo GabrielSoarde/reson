@@ -575,6 +575,7 @@ public sealed class MainWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // col 3: normalize check
 
         var stopButton = BuildStopButton();
         Grid.SetColumn(stopButton, 0);
@@ -638,6 +639,21 @@ public sealed class MainWindow : Window
         _monitorCheck.Unchecked += OnMonitorCheckChanged;
         Grid.SetColumn(_monitorCheck, 2);
         grid.Children.Add(_monitorCheck);
+
+        var normalizeCheck = new CheckBox
+        {
+            Content = "Normalizar volume",
+            Foreground = Brushes.White,
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 0, 0),
+            IsChecked = _library.Config.NormalizeEnabled,
+        };
+        normalizeCheck.Checked += (_, _) => _library.SetNormalizeEnabled(true);
+        normalizeCheck.Unchecked += (_, _) => _library.SetNormalizeEnabled(false);
+        Grid.SetColumn(normalizeCheck, 3);
+        grid.Children.Add(normalizeCheck);
 
         bar.Child = grid;
         return bar;
