@@ -605,6 +605,45 @@ public class SoundLibrary
         if (changed) Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Store the computed normalization gain for a sound (idempotent). No-op if
+    /// the id isn't found on any board. Persists + raises Changed when it changes.
+    /// </summary>
+    public void SetNormalizeGainDb(string id, double gainDb)
+    {
+        bool changed = false;
+        lock (_lock)
+        {
+            var boards = new List<Board>(_config.Boards.Count);
+            foreach (var b in _config.Boards)
+            {
+                var idx = b.Sounds.FindIndex(s => s.Id == id);
+                if (idx < 0) { boards.Add(b); continue; }
+                if (b.Sounds[idx].NormalizeGainDb == gainDb) { boards.Add(b); continue; }
+                var sounds = new List<SoundEntry>(b.Sounds);
+                sounds[idx] = sounds[idx] with { NormalizeGainDb = gainDb };
+                boards.Add(b with { Sounds = sounds });
+                changed = true;
+            }
+            if (!changed) return;
+            _config = _config with { Boards = boards };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>Toggle global loudness normalization. Persists + raises Changed.</summary>
+    public void SetNormalizeEnabled(bool enabled)
+    {
+        lock (_lock)
+        {
+            if (_config.NormalizeEnabled == enabled) return;
+            _config = _config with { NormalizeEnabled = enabled };
+            SaveLocked();
+        }
+        Changed?.Invoke();
+    }
+
     public void ApplyLayout(IEnumerable<(string Id, GridPosition? Position)> placements)
     {
         lock (_lock)
