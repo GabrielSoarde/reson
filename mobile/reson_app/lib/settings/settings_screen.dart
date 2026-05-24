@@ -93,6 +93,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _setNormalize(bool enabled) async {
+    try {
+      await widget.api.setNormalize(enabled);
+      await _refresh();
+    } on ApiException catch (e) {
+      _toast(_friendly(e.body, 'Falha ao alterar normalização'));
+    } catch (_) {
+      _toast('Erro de rede');
+    }
+  }
+
   String _friendly(String body, String fallback) {
     // The backend wraps errors as { "error": "<code>" }. Translate the known
     // codes to readable PT messages; otherwise show the fallback.
@@ -196,6 +207,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 options: s.availableInputDevices,
                 onChanged: _setMicDevice,
                 nullLabel: 'Padrão do Windows',
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Normalizar volume',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Equaliza o volume dos sons entre si',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                value: s.normalizeEnabled,
+                activeThumbColor: AppColors.accent,
+                onChanged: _setNormalize,
               ),
             ],
             const SizedBox(height: 32),

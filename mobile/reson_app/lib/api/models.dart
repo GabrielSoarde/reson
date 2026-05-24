@@ -118,6 +118,7 @@ class StateDto {
   final String? monitorDevice;
   final String? monitorDeviceName;
   final bool monitorEnabled;
+  final bool normalizeEnabled;
   final String? micDevice;
   final String? micDeviceName;
   final List<String> availableOutputDevices;
@@ -136,6 +137,7 @@ class StateDto {
     required this.monitorDevice,
     required this.monitorDeviceName,
     required this.monitorEnabled,
+    required this.normalizeEnabled,
     required this.micDevice,
     required this.micDeviceName,
     required this.availableOutputDevices,
@@ -155,6 +157,7 @@ class StateDto {
         monitorDevice: j['monitorDevice'] as String?,
         monitorDeviceName: j['monitorDeviceName'] as String?,
         monitorEnabled: (j['monitorEnabled'] as bool?) ?? false,
+        normalizeEnabled: (j['normalizeEnabled'] as bool?) ?? true,
         micDevice: j['micDevice'] as String?,
         micDeviceName: j['micDeviceName'] as String?,
         availableOutputDevices: (j['availableOutputDevices'] as List<dynamic>?)

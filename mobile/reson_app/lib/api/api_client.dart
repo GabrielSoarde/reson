@@ -79,6 +79,14 @@ class ApiClient {
     _expect204(r);
   }
 
+  Future<void> setNormalize(bool enabled) async {
+    final r = await _http
+        .post(_u('/api/normalize'),
+            headers: _jsonHeaders(), body: jsonEncode({'enabled': enabled}))
+        .timeout(_timeout);
+    _expect204(r);
+  }
+
   /// Apply the full grid layout. The web UI sends a snapshot of all positioned
   /// sounds and the backend reconciles by id, so we just hand it a list of
   /// (id, position) pairs.
