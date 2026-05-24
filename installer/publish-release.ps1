@@ -164,9 +164,20 @@ if ($LASTEXITCODE -ne 0) { throw "vpk upload github failed (exit $LASTEXITCODE)"
 # set it explicitly now. This matters beyond cosmetics: the Android updater shows
 # the GitHub release `body` verbatim in its "update available" prompt
 # (UpdateChecker reads json['body']), so -Notes is the user-facing changelog.
+#
+# Use --notes-file (not --notes "$Notes"): passing non-ASCII text (pt-BR accents,
+# emoji) as a CLI argument to gh.exe gets mangled by PowerShell 5.1's ANSI arg
+# encoding. Writing UTF-8 (no BOM) to a temp file and reading it back is safe.
 Write-Host "==> Setting release notes on $tag..." -ForegroundColor Cyan
-gh release edit $tag --notes $Notes
-if ($LASTEXITCODE -ne 0) { throw "gh release edit (notes) failed (exit $LASTEXITCODE)" }
+$notesFile = Join-Path ([System.IO.Path]::GetTempPath()) "reson-notes-$Version.md"
+Set-FileText $notesFile $Notes
+try {
+    gh release edit $tag --notes-file $notesFile
+    if ($LASTEXITCODE -ne 0) { throw "gh release edit (notes) failed (exit $LASTEXITCODE)" }
+}
+finally {
+    Remove-Item $notesFile -ErrorAction SilentlyContinue
+}
 
 # --- 7. Attach the Android APK to the same release ------------------------
 Write-Host "==> Attaching Android APK to release $tag..." -ForegroundColor Cyan
