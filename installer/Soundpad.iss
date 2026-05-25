@@ -29,7 +29,7 @@
 ;   3. Run `installer\build.ps1` from the repo root.
 
 #define MyAppName "Reson"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "AP2 QuantumSolutions"
 #define MyAppURL "https://vb-audio.com/Cable"
 #define MyAppExeName "Reson.exe"
