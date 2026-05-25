@@ -745,6 +745,16 @@ public sealed class MainWindow : Window
         outline.MouseEnter += (_, _) => outline.Background = new SolidColorBrush(IconHoverBg) { Opacity = 0.3 };
         outline.MouseLeave += (_, _) => outline.Background = Brushes.Transparent;
         outline.MouseLeftButtonUp += (_, _) => OpenAddSoundDialog(pos);
+        outline.Child = new TextBlock
+        {
+            Text = "+",
+            Foreground = new SolidColorBrush(MutedTextColor) { Opacity = 0.35 },
+            FontSize = 32,
+            FontWeight = FontWeights.Light,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
         return outline;
     }
 
@@ -789,6 +799,8 @@ public sealed class MainWindow : Window
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(10, 0, 10, 0),
+            MaxHeight = 44, // ~2 lines at FontSize 15
+            TextTrimming = TextTrimming.CharacterEllipsis,
         };
         stack.Children.Add(label);
         if (sound.Volume != 100)

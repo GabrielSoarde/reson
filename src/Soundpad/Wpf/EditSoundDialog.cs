@@ -85,6 +85,7 @@ internal sealed class EditSoundDialog : Window
             Margin = new Thickness(0, 0, 0, 4),
         });
         _labelInput = MakeTextBox(sound.Label);
+        _labelInput.MaxLength = 40;
         _labelInput.TextChanged += (_, _) => _previewLabel.Text = _labelInput.Text;
         form.Children.Add(_labelInput);
 

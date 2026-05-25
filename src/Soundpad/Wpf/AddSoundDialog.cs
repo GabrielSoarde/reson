@@ -6,6 +6,7 @@ using Soundpad.Sound;
 using Brushes = System.Windows.Media.Brushes;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using Orientation = System.Windows.Controls.Orientation;
+using Button = System.Windows.Controls.Button;
 using TextBox = System.Windows.Controls.TextBox;
 using Path = System.IO.Path;
 using VerticalAlignment = System.Windows.VerticalAlignment;
@@ -31,6 +32,7 @@ internal sealed class AddSoundDialog : Window
     private readonly TextBlock _volumeReadout;
     private readonly Border _previewTile;
     private readonly TextBlock _previewLabel;
+    private readonly Button _addButton;
     private string? _pickedFile;
 
     public AddSoundDialog(SoundLibrary library, string soundsDir, GridPosition? targetPosition = null)
@@ -93,6 +95,7 @@ internal sealed class AddSoundDialog : Window
             Margin = new Thickness(0, 0, 0, 4),
         });
         _labelInput = MakeTextBox("Novo som");
+        _labelInput.MaxLength = 40;
         _labelInput.TextChanged += (_, _) => _previewLabel.Text = _labelInput.Text;
         form.Children.Add(_labelInput);
 
@@ -130,8 +133,10 @@ internal sealed class AddSoundDialog : Window
         var colorRow = new DockPanel { LastChildFill = true };
         // Bind _colorInput before constructing pickColorBtn so the lambda
         // captures a non-null reference.
-        _colorInput = MakeTextBox("#3b82f6");
+        var initialColor = Soundpad.Sound.SoundColors.PickInitial(_library.ActiveBoard.Sounds.Count);
+        _colorInput = MakeTextBox(initialColor);
         _colorInput.Margin = new Thickness(0, 0, 8, 0);
+        _previewTile.Background = new SolidColorBrush(MainWindow.ParseColorOrFallback(initialColor));
         _colorInput.TextChanged += (_, _) =>
         {
             try { _previewTile.Background = new SolidColorBrush(MainWindow.ParseColorOrFallback(_colorInput.Text)); }
@@ -199,12 +204,13 @@ internal sealed class AddSoundDialog : Window
         };
         var cancel = MainWindow.BuildFlatButton("Cancelar", MainWindow.NeutralColor, MainWindow.NeutralHoverColor, 100, 34, 12);
         cancel.Click += (_, _) => { DialogResult = false; Close(); };
-        var addBtn = MainWindow.BuildFlatButton("ADICIONAR", MainWindow.AccentColor, MainWindow.AccentHoverColor, 130, 34, 12);
-        addBtn.Margin = new Thickness(8, 0, 0, 0);
-        addBtn.IsDefault = true;
-        addBtn.Click += (_, _) => Commit();
+        _addButton = MainWindow.BuildFlatButton("ADICIONAR", MainWindow.AccentColor, MainWindow.AccentHoverColor, 130, 34, 12);
+        _addButton.Margin = new Thickness(8, 0, 0, 0);
+        _addButton.IsDefault = true;
+        _addButton.IsEnabled = false;
+        _addButton.Click += (_, _) => Commit();
         buttons.Children.Add(cancel);
-        buttons.Children.Add(addBtn);
+        buttons.Children.Add(_addButton);
         Grid.SetColumn(buttons, 0);
         Grid.SetColumnSpan(buttons, 2);
         Grid.SetRow(buttons, 1);
@@ -239,6 +245,7 @@ internal sealed class AddSoundDialog : Window
         if (dlg.ShowDialog(this) != true) return;
         _pickedFile = dlg.FileName;
         _filePathText.Text = Path.GetFileName(_pickedFile);
+        _addButton.IsEnabled = true;
         // Auto-fill the label from the filename stem if the user hasn't
         // touched it yet — small QoL win.
         if (_labelInput.Text == "Novo som" || string.IsNullOrWhiteSpace(_labelInput.Text))
