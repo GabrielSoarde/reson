@@ -1123,6 +1123,9 @@ public sealed class MainWindow : Window
         var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
         hoverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(hover), "Bg"));
         template.Triggers.Add(hoverTrigger);
+        var disabledTrigger = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
+        disabledTrigger.Setters.Add(new Setter(UIElement.OpacityProperty, 0.45, "Bg"));
+        template.Triggers.Add(disabledTrigger);
         return template;
     }
 
